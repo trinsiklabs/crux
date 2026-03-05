@@ -1,0 +1,39 @@
+{
+  "models": {
+    "primary": {
+      "provider": "ollama",
+      "model": "crux-think",
+      "endpoint": "http://localhost:11434"
+    },
+    "small": {
+      "provider": "ollama",
+      "model": "qwen3:8b",
+      "endpoint": "http://localhost:11434"
+    },
+    "available": [
+      {
+        "provider": "ollama",
+        "model": "crux-chat",
+        "endpoint": "http://localhost:11434"
+      }
+    ]
+  },
+  "lsp": {
+    "python": {
+      "command": "pyright",
+      "args": ["--outputjson"]
+    },
+    "elixir": {
+      "command": "elixir-ls",
+      "alternative": "next-ls"
+    }
+  },
+  "timeout": 600000,
+  "permissions": {
+    "edit": "ask",
+    "bash": "ask"
+  },
+  "pluginPath": "~/.config/opencode/plugins/",
+  "commandPath": "~/.config/opencode/commands/",
+  "toolPath": "~/.config/opencode/tools/"
+}
