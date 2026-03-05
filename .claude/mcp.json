@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "crux": {
+      "command": "python",
+      "args": [
+        "-m",
+        "scripts.lib.crux_mcp_server"
+      ],
+      "env": {
+        "CRUX_PROJECT": "/Users/user/personal/crux",
+        "CRUX_HOME": "/Users/user"
+      }
+    }
+  }
+}
