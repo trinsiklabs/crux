@@ -220,6 +220,13 @@ detect_hardware() {
 
     header "STEP 1: Hardware Detection"
 
+    if [[ "$OSTYPE" != "darwin"* ]]; then
+        error "Hardware detection requires macOS (Apple Silicon)."
+        error "OpenCode local LLM setup is currently macOS-only."
+        error "For Linux, use: ./setup.sh and select Claude Code."
+        exit 1
+    fi
+
     info "Detecting system hardware..."
 
     # Total RAM in bytes
@@ -1561,9 +1568,14 @@ summary_claude_code() {
     echo -e "${CYAN}→${NC} Crux is ready for Claude Code!"
     echo ""
 
+    local shell_rc="~/.bashrc"
+    if [[ "${SHELL:-}" == *"zsh"* ]]; then
+        shell_rc="~/.zshrc"
+    fi
+
     echo -e "${BOLD}Quick Start:${NC}"
     echo "  1. Reload your shell:"
-    echo "       source ~/.zshrc"
+    echo "       source $shell_rc"
     echo ""
     echo "  2. Adopt Crux into any project:"
     echo "       cd your-project"
@@ -1668,21 +1680,9 @@ main() {
         echo "╔════════════════════════════════════════════════════════════╗"
         echo "║                                                          ║"
         echo "║            Crux Setup - Self-Improving AI OS             ║"
-        echo "║                macOS (Apple Silicon)                      ║"
         echo "║                                                          ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo -e "${NC}\n"
-
-        # Check prerequisites
-        if [[ "$OSTYPE" != "darwin"* ]]; then
-            error "This script is for macOS only"
-            exit 1
-        fi
-
-        if ! sysctl hw.memsize &> /dev/null; then
-            error "Could not detect system hardware"
-            exit 1
-        fi
     fi
 
     # Select tool (or read from state in update mode)

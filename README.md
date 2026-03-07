@@ -99,7 +99,7 @@ Crux exposes its capabilities via the Model Context Protocol, making them availa
 
 ### Prerequisites
 
-- macOS (Apple Silicon) or Linux
+- macOS or Linux (Ubuntu 24.04+, Debian, etc.)
 - Python 3.10+
 - Git
 
@@ -108,7 +108,7 @@ Crux exposes its capabilities via the Model Context Protocol, making them availa
 ```bash
 git clone https://github.com/trinsiklabs/crux.git ~/.crux
 ~/.crux/setup.sh        # Select "Claude Code" — installs deps + CLI (~10 seconds)
-source ~/.zshrc
+source ~/.bashrc          # or ~/.zshrc on macOS
 
 cd your-project
 crux adopt               # Sets up .crux/, MCP server (37 tools), and hooks
