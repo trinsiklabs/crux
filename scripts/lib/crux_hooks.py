@@ -8,14 +8,51 @@ Handles events from Claude Code's hooks system:
 
 Each handler receives parsed event data and returns a result dict.
 The run_hook() function dispatches stdin JSON to the correct handler.
+
+Security: PLAN-166 audit - fixes for path traversal, injection, and error handling.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import shlex
 from datetime import datetime, timezone
+from pathlib import Path
+
+# Security: Configure logging for audit trail (PLAN-166)
+_logger = logging.getLogger("crux.hooks")
+
+
+# ---------------------------------------------------------------------------
+# Security validation functions (PLAN-166)
+# ---------------------------------------------------------------------------
+
+# Allowed characters for mode names, filenames, etc.
+_SAFE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$')
+
+
+def _is_safe_name(name: str) -> bool:
+    """Validate name contains only safe characters (no path traversal)."""
+    if not name or len(name) > 128:
+        return False
+    if '..' in name or '/' in name or '\\' in name:
+        return False
+    return bool(_SAFE_NAME_PATTERN.match(name))
+
+
+def _is_safe_path(path: str, allowed_base: str) -> bool:
+    """Validate path stays within allowed_base directory."""
+    try:
+        # Resolve to absolute, canonical path
+        resolved = Path(path).resolve()
+        base_resolved = Path(allowed_base).resolve()
+        # Check path is under base
+        return str(resolved).startswith(str(base_resolved) + os.sep) or resolved == base_resolved
+    except (ValueError, OSError):
+        return False
 
 from scripts.lib.crux_paths import get_project_paths, get_user_paths
 from scripts.lib.crux_session import load_session, save_session, update_session
@@ -265,11 +302,15 @@ def handle_session_start(
 
     parts: list[str] = []
 
-    # Mode prompt
-    mode_file = os.path.join(user_paths.modes, f"{state.active_mode}.md")
-    if os.path.exists(mode_file):
-        with open(mode_file) as f:
-            parts.append(f"## Active Mode: {state.active_mode}\n{f.read()}")
+    # Mode prompt (PLAN-166: validate mode name to prevent path traversal)
+    if _is_safe_name(state.active_mode):
+        mode_file = os.path.join(user_paths.modes, f"{state.active_mode}.md")
+        # Additional check: ensure resolved path stays within modes directory
+        if _is_safe_path(mode_file, user_paths.modes) and os.path.exists(mode_file):
+            with open(mode_file) as f:
+                parts.append(f"## Active Mode: {state.active_mode}\n{f.read()}")
+    else:
+        _logger.warning(f"Unsafe mode name rejected: {state.active_mode!r}")
 
     # Session state
     parts.append(f"## Session State")
@@ -312,12 +353,17 @@ def handle_post_tool_use(
     # Log every interaction
     _log_interaction(tool_name, tool_input, project_dir)
 
-    # Track file touches for Edit/Write
+    # Track file touches for Edit/Write (PLAN-166: validate file paths)
     if tool_name in ("Edit", "Write"):
         file_path = tool_input.get("file_path")
-        if file_path:
-            update_session(crux_dir, add_file=file_path)
-            result["file_tracked"] = file_path
+        if file_path and isinstance(file_path, str):
+            # Security: Validate path doesn't contain traversal sequences
+            # and is within the project directory
+            if _is_safe_path(file_path, project_dir):
+                update_session(crux_dir, add_file=file_path)
+                result["file_tracked"] = file_path
+            else:
+                _logger.warning(f"Unsafe file path rejected: {file_path!r}")
 
     # Increment BIP interaction counter
     _increment_bip_counter(project_dir, "interactions_since_last_post", 1)
@@ -344,13 +390,20 @@ def _increment_bip_counter(project_dir: str, field_name: str, amount: int = 1) -
 
 
 def _try_background_processors(project_dir: str, home: str) -> dict | None:
-    """Run background processors if thresholds are exceeded. Never raises."""
+    """Run background processors if thresholds are exceeded. Never raises.
+
+    PLAN-166: Now logs exceptions instead of silently swallowing them.
+    """
     try:
         from scripts.lib.crux_background_processor import should_process, run_processors
         if should_process(project_dir, home):
             return run_processors(project_dir, home)
-    except Exception:
+    except ImportError:
+        # Expected if background processor not available
         pass
+    except Exception as e:
+        # PLAN-166: Log unexpected errors for security audit trail
+        _logger.error(f"Background processor error: {type(e).__name__}: {e}")
     return None
 
 
@@ -433,13 +486,22 @@ def run_hook(
     project_dir: str,
     home: str,
 ) -> dict:
-    """Parse event JSON and dispatch to the appropriate handler."""
+    """Parse event JSON and dispatch to the appropriate handler.
+
+    PLAN-166: Added JSON schema validation for security.
+    """
     try:
         event_data = json.loads(event_json)
     except (json.JSONDecodeError, TypeError):
         return {"status": "error", "message": "Invalid JSON"}
 
+    # PLAN-166: Validate event data structure
+    if not isinstance(event_data, dict):
+        return {"status": "error", "message": "Event must be a JSON object"}
+
     event_name = event_data.get("hook_event_name", "")
+    if not isinstance(event_name, str):
+        return {"status": "error", "message": "hook_event_name must be a string"}
 
     handlers = {
         "SessionStart": handle_session_start,
@@ -460,11 +522,15 @@ def run_hook(
 # ---------------------------------------------------------------------------
 
 def build_hook_settings(project_dir: str, home: str) -> dict:
-    """Build the hooks configuration for .claude/settings.local.json."""
+    """Build the hooks configuration for .claude/settings.local.json.
+
+    PLAN-166: Use shlex.quote to prevent command injection via paths.
+    """
     from scripts.lib.crux_paths import get_crux_python, get_crux_repo
     python = get_crux_python()
     crux_repo = get_crux_repo()
-    runner = f"PYTHONPATH={crux_repo} {python} -m scripts.lib.crux_hook_runner"
+    # Security: Quote paths to prevent shell injection (PLAN-166)
+    runner = f"PYTHONPATH={shlex.quote(crux_repo)} {shlex.quote(python)} -m scripts.lib.crux_hook_runner"
 
     return {
         "hooks": {
