@@ -220,13 +220,14 @@ def adopt_project(
     os.makedirs(claude_dir, exist_ok=True)
 
     # 8a. MCP server config
-    import sys
-    crux_repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from scripts.lib.crux_paths import get_crux_python, get_crux_repo
+    python_path = get_crux_python()
+    crux_repo = get_crux_repo()
     mcp_json_path = os.path.join(claude_dir, "mcp.json")
     mcp_config = {
         "mcpServers": {
             "crux": {
-                "command": sys.executable,
+                "command": python_path,
                 "args": ["-m", "scripts.lib.crux_mcp_server"],
                 "env": {
                     "CRUX_PROJECT": project_dir,

@@ -169,6 +169,26 @@ class ProjectPaths:
         return os.path.join(self.root, "models", "registry.json")
 
 
+def get_crux_repo() -> str:
+    """Return the absolute path to the Crux repo root."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def get_crux_python() -> str:
+    """Return the Python executable for running Crux scripts.
+
+    Prefers the venv Python at <repo>/.venv/bin/python if it exists (needed on
+    Linux where the system Python is externally managed). Falls back to the
+    current interpreter.
+    """
+    import sys
+    repo = get_crux_repo()
+    venv_python = os.path.join(repo, ".venv", "bin", "python")
+    if os.path.isfile(venv_python):
+        return venv_python
+    return sys.executable
+
+
 def get_user_paths(home: str | None = None) -> UserPaths:
     """Get user-level Crux paths (~/.crux/)."""
     if home is None:

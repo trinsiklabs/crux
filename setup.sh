@@ -184,7 +184,12 @@ install_python_deps() {
     header "Installing Python Dependencies"
 
     if ! command -v python3 &>/dev/null; then
-        error "Python 3 not found. Install via: brew install python3"
+        error "Python 3 not found."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            error "Install via: brew install python3"
+        else
+            error "Install via: sudo apt install python3 python3-venv"
+        fi
         return 1
     fi
 
@@ -192,20 +197,39 @@ install_python_deps() {
     py_version=$(python3 --version 2>&1)
     success "Python: $py_version"
 
-    # Check if mcp is already installed
-    if python3 -c "import mcp" 2>/dev/null; then
+    local venv_dir="$CRUX_DIR/.venv"
+
+    # Create venv if it doesn't exist
+    if [ ! -d "$venv_dir" ]; then
+        info "Creating Python virtual environment..."
+        if ! python3 -m venv "$venv_dir" 2>/dev/null; then
+            # On Ubuntu/Debian, python3-venv may not be installed
+            error "Failed to create venv. On Ubuntu/Debian, run:"
+            error "  sudo apt install python3-venv"
+            error "Then re-run setup.sh"
+            return 1
+        fi
+        success "Created venv at $venv_dir"
+    else
+        success "Venv already exists at $venv_dir"
+    fi
+
+    # Install deps into venv
+    local venv_python="$venv_dir/bin/python"
+    if "$venv_python" -c "import mcp" 2>/dev/null; then
         success "MCP package already installed"
     else
-        info "Installing MCP package (required for Crux MCP server)..."
-        if python3 -m pip install -r "$CRUX_DIR/requirements.txt" 2>/dev/null; then
-            success "MCP package installed"
-        elif pip3 install -r "$CRUX_DIR/requirements.txt" 2>/dev/null; then
+        info "Installing MCP package into venv..."
+        if "$venv_python" -m pip install -r "$CRUX_DIR/requirements.txt" 2>&1 | tail -1; then
             success "MCP package installed"
         else
-            error "Failed to install MCP package. Run manually: pip install mcp"
+            error "Failed to install MCP package"
             return 1
         fi
     fi
+
+    # Save venv python path for other components to use
+    state_save "venv_python" "$venv_python"
 }
 
 ###############################################################################

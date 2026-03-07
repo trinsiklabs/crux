@@ -257,7 +257,7 @@ class TestAdoptMCPSetup:
         assert "crux" in data["mcpServers"]
 
     def test_mcp_json_has_absolute_python_path(self, project_with_git):
-        import sys
+        from scripts.lib.crux_paths import get_crux_python
         adopt_project(
             project_dir=project_with_git["project"],
             home=project_with_git["home"],
@@ -265,7 +265,8 @@ class TestAdoptMCPSetup:
         mcp_json = Path(project_with_git["project"]) / ".claude" / "mcp.json"
         data = json.loads(mcp_json.read_text())
         server = data["mcpServers"]["crux"]
-        assert server["command"] == sys.executable
+        assert server["command"] == get_crux_python()
+        assert os.path.isabs(server["command"])
         assert "-m" in server["args"]
         assert "scripts.lib.crux_mcp_server" in server["args"]
 

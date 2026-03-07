@@ -141,7 +141,8 @@ def _safe_write(path: str, content: str) -> None:
 
 def _crux_repo_root() -> str:
     """Resolve the Crux repo root (where scripts/, templates/ live)."""
-    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from scripts.lib.crux_paths import get_crux_repo
+    return get_crux_repo()
 
 
 CRUX_AGENTS_START = "<!-- CRUX:START -->"
@@ -229,7 +230,7 @@ def sync_opencode(project_dir: str, home: str) -> SyncResult:
 
 def _write_opencode_mcp_config(config_dir: str, project_dir: str, home: str) -> None:
     """Write or merge Crux MCP server config into opencode.json."""
-    import sys
+    from scripts.lib.crux_paths import get_crux_python
 
     config_file = os.path.join(config_dir, "opencode.json")
 
@@ -243,7 +244,7 @@ def _write_opencode_mcp_config(config_dir: str, project_dir: str, home: str) -> 
             existing = {}
 
     # Build the Crux MCP entry in OpenCode format
-    python_path = sys.executable
+    python_path = get_crux_python()
     crux_repo = _crux_repo_root()
     crux_mcp: dict = {
         "type": "local",
@@ -360,7 +361,7 @@ def _build_context_md(project_dir: str) -> str:
 
 def _write_mcp_config(config_path: str, project_dir: str, home: str) -> None:
     """Write or merge Crux MCP server entry into a JSON config file."""
-    import sys
+    from scripts.lib.crux_paths import get_crux_python
 
     existing: dict = {}
     if os.path.exists(config_path):
@@ -370,7 +371,7 @@ def _write_mcp_config(config_path: str, project_dir: str, home: str) -> None:
         except (json.JSONDecodeError, OSError):
             existing = {}
 
-    python_path = sys.executable
+    python_path = get_crux_python()
     crux_repo = _crux_repo_root()
     crux_mcp: dict = {
         "command": python_path,

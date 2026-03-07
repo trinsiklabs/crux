@@ -461,10 +461,9 @@ def run_hook(
 
 def build_hook_settings(project_dir: str, home: str) -> dict:
     """Build the hooks configuration for .claude/settings.local.json."""
-    # Use absolute python path and PYTHONPATH for reliability across projects
-    import sys
-    python = sys.executable
-    crux_repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from scripts.lib.crux_paths import get_crux_python, get_crux_repo
+    python = get_crux_python()
+    crux_repo = get_crux_repo()
     runner = f"PYTHONPATH={crux_repo} {python} -m scripts.lib.crux_hook_runner"
 
     return {
