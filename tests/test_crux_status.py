@@ -633,24 +633,21 @@ class TestCheckLiveness:
 
     def test_mcp_loadable_fails_on_import_error(self, env, monkeypatch):
         from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_status as status_mod
-        # Patch the import to fail inside check_liveness
-        original_liveness = status_mod.check_liveness
+        import subprocess
 
-        def patched_liveness(project_dir, home):
-            import builtins
-            real_import = builtins.__import__
-            def fail_import(name, *args, **kwargs):
-                if "crux_mcp_server" in name:
-                    raise ImportError("simulated MCP failure")
-                return real_import(name, *args, **kwargs)
-            builtins.__import__ = fail_import
-            try:
-                return original_liveness(project_dir, home)
-            finally:
-                builtins.__import__ = real_import
+        # MCP check now uses subprocess — mock it to simulate failure
+        original_run = subprocess.run
 
-        checks = patched_liveness(env["project"], env["home"])
+        def mock_run(cmd, *args, **kwargs):
+            cmd_str = " ".join(str(c) for c in cmd) if isinstance(cmd, list) else str(cmd)
+            if "crux_mcp_server" in cmd_str:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="", stderr="ImportError: simulated MCP failure"
+                )
+            return original_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        checks = check_liveness(env["project"], env["home"])
         mcp_check = next(c for c in checks if "mcp loadable" in c["name"].lower())
         assert mcp_check["passed"] is False
         assert "failed" in mcp_check["message"].lower()
