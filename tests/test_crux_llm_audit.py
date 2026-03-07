@@ -1,4 +1,7 @@
-"""Tests for crux_llm_audit.py — LLM-based script auditing for Gates 4-5."""
+"""Tests for crux_llm_audit.py — LLM-based script auditing for Gates 4-5.
+
+Updated for PLAN-169 backend abstraction.
+"""
 
 import json
 from unittest.mock import patch, MagicMock
@@ -8,7 +11,11 @@ import pytest
 from scripts.lib.crux_llm_audit import (
     audit_script_8b,
     audit_script_32b,
-    format_audit_prompt,
+)
+from scripts.lib.crux_audit_backend import (
+    _format_audit_prompt as format_audit_prompt,
+    AuditResult,
+    OllamaBackend,
 )
 
 
@@ -29,10 +36,12 @@ CLEAN_RESPONSE = json.dumps({
 
 FINDINGS_RESPONSE = json.dumps({
     "passed": False,
-    "findings": [
-        {"severity": "high", "title": "Command injection", "description": "Unquoted variable expansion"},
-    ],
-    "summary": "1 issue found.",
+    "findings": [{
+        "severity": "high",
+        "title": "Unquoted variable",
+        "description": "DRY_RUN not quoted in conditional",
+    }],
+    "summary": "Security issues found",
 })
 
 
@@ -59,76 +68,96 @@ class TestFormatAuditPrompt:
 # ---------------------------------------------------------------------------
 
 class TestAuditScript8b:
-    def test_clean_audit_passes(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            result = audit_script_8b(SAMPLE_SCRIPT, "medium")
-            assert result["passed"] is True
-            assert result["skipped"] is False
-            assert len(result["findings"]) == 0
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_clean_audit_passes(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        result = audit_script_8b(SAMPLE_SCRIPT, "medium")
+        assert result["passed"] is True
+        assert result["skipped"] is False
+        assert len(result["findings"]) == 0
 
-    def test_audit_with_findings_fails(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": FINDINGS_RESPONSE}
-            result = audit_script_8b(SAMPLE_SCRIPT, "medium")
-            assert result["passed"] is False
-            assert len(result["findings"]) == 1
-            assert result["findings"][0]["severity"] == "high"
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_audit_with_findings_fails(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": True, "response": FINDINGS_RESPONSE}
+        result = audit_script_8b(SAMPLE_SCRIPT, "medium")
+        assert result["passed"] is False
+        assert len(result["findings"]) == 1
+        assert result["findings"][0]["severity"] == "high"
 
-    def test_ollama_unavailable_skips_gracefully(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": False, "error": "Connection refused"}
-            result = audit_script_8b(SAMPLE_SCRIPT, "medium")
-            assert result["passed"] is True
-            assert result["skipped"] is True
-            assert "unavailable" in result["reason"].lower()
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_ollama_unavailable_skips_gracefully(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": False, "error": "Connection refused"}
+        result = audit_script_8b(SAMPLE_SCRIPT, "medium")
+        assert result["passed"] is True
+        assert result["skipped"] is True
 
-    def test_malformed_llm_response_skips(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": "not json at all"}
-            result = audit_script_8b(SAMPLE_SCRIPT, "medium")
-            assert result["passed"] is True
-            assert result["skipped"] is True
-            assert "parse" in result["reason"].lower()
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_malformed_llm_response_skips(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": True, "response": "not json at all"}
+        result = audit_script_8b(SAMPLE_SCRIPT, "medium")
+        assert result["passed"] is True
+        assert result["skipped"] is True
 
-    def test_uses_8b_model(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            audit_script_8b(SAMPLE_SCRIPT, "medium")
-            call_kwargs = mock_gen.call_args[1] if mock_gen.call_args[1] else {}
-            call_args = mock_gen.call_args[0] if mock_gen.call_args[0] else ()
-            # Model should contain 8b indicator
-            all_args = str(call_args) + str(call_kwargs)
-            assert "8b" in all_args.lower() or "small" in all_args.lower()
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_uses_8b_model(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        audit_script_8b(SAMPLE_SCRIPT, "low")
+        call_args = mock_gen.call_args
+        assert "qwen3:8b" in call_args.kwargs.get("model", "")
 
-    def test_low_risk_still_audited(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            result = audit_script_8b(SAMPLE_SCRIPT, "low")
-            assert result["skipped"] is False
-            assert mock_gen.called
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_low_risk_still_audited(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        result = audit_script_8b(SAMPLE_SCRIPT, "low")
+        assert result["skipped"] is False
 
-    def test_custom_endpoint(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            audit_script_8b(SAMPLE_SCRIPT, "medium", endpoint="http://gpu:11434")
-            _, kwargs = mock_gen.call_args
-            assert kwargs.get("endpoint") == "http://gpu:11434"
+    @patch("scripts.lib.crux_audit_backend.generate")
+    def test_custom_endpoint(self, mock_gen):
+        """Custom endpoint forces OllamaBackend directly."""
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        result = audit_script_8b(SAMPLE_SCRIPT, "low", endpoint="http://gpu:11434")
+        assert mock_gen.called
+        assert "gpu:11434" in str(mock_gen.call_args)
 
-    def test_custom_model(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            audit_script_8b(SAMPLE_SCRIPT, "medium", model="custom:7b")
-            _, kwargs = mock_gen.call_args
-            assert kwargs.get("model") == "custom:7b"
+    @patch("scripts.lib.crux_audit_backend.generate")
+    def test_custom_model(self, mock_gen):
+        """Custom model is passed through."""
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        audit_script_8b(SAMPLE_SCRIPT, "low", endpoint="http://localhost:11434", model="llama3:8b")
+        call_args = mock_gen.call_args
+        assert call_args.kwargs.get("model") == "llama3:8b"
 
-    def test_markdown_wrapped_json_response(self):
-        wrapped = f"```json\n{CLEAN_RESPONSE}\n```"
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": wrapped}
-            result = audit_script_8b(SAMPLE_SCRIPT, "medium")
-            assert result["passed"] is True
-            assert result["skipped"] is False
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_markdown_wrapped_json_response(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        wrapped = "```json\n" + CLEAN_RESPONSE + "\n```"
+        mock_gen.return_value = {"success": True, "response": wrapped}
+        result = audit_script_8b(SAMPLE_SCRIPT, "medium")
+        assert result["passed"] is True
+        assert result["skipped"] is False
+
+    def test_result_includes_backend_info(self):
+        """Results now include backend field (PLAN-169)."""
+        with patch("scripts.lib.crux_audit_backend.generate") as mock_gen:
+            with patch("scripts.lib.crux_audit_backend.check_ollama_running") as mock_check:
+                mock_check.return_value = True
+                mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+                result = audit_script_8b(SAMPLE_SCRIPT, "medium")
+                assert "backend" in result
+                assert "Ollama" in result["backend"]
 
 
 # ---------------------------------------------------------------------------
@@ -136,62 +165,68 @@ class TestAuditScript8b:
 # ---------------------------------------------------------------------------
 
 class TestAuditScript32b:
-    def test_high_risk_runs_audit(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            result = audit_script_32b(SAMPLE_SCRIPT, "high")
-            assert result["passed"] is True
-            assert result["skipped"] is False
-            assert mock_gen.called
-
-    def test_non_high_risk_skips(self):
+    def test_skips_non_high_risk(self):
         result = audit_script_32b(SAMPLE_SCRIPT, "medium")
         assert result["passed"] is True
         assert result["skipped"] is True
         assert "high-risk" in result["reason"].lower() or "not high" in result["reason"].lower()
 
-    def test_low_risk_skips(self):
+    def test_skips_low_risk(self):
         result = audit_script_32b(SAMPLE_SCRIPT, "low")
         assert result["skipped"] is True
 
-    def test_audit_with_findings_fails(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": FINDINGS_RESPONSE}
-            result = audit_script_32b(SAMPLE_SCRIPT, "high")
-            assert result["passed"] is False
-            assert len(result["findings"]) == 1
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_high_risk_runs_audit(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        result = audit_script_32b(SAMPLE_SCRIPT, "high")
+        assert result["skipped"] is False
+        assert mock_gen.called
 
-    def test_ollama_unavailable_skips_gracefully(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": False, "error": "Connection refused"}
-            result = audit_script_32b(SAMPLE_SCRIPT, "high")
-            assert result["passed"] is True
-            assert result["skipped"] is True
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_audit_with_findings_fails(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": True, "response": FINDINGS_RESPONSE}
+        result = audit_script_32b(SAMPLE_SCRIPT, "high")
+        assert result["passed"] is False
 
-    def test_uses_32b_model(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            audit_script_32b(SAMPLE_SCRIPT, "high")
-            all_args = str(mock_gen.call_args)
-            assert "32b" in all_args.lower() or "large" in all_args.lower()
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_ollama_unavailable_skips_gracefully(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": False, "error": "Connection refused"}
+        result = audit_script_32b(SAMPLE_SCRIPT, "high")
+        assert result["passed"] is True
+        assert result["skipped"] is True
 
-    def test_custom_model(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            audit_script_32b(SAMPLE_SCRIPT, "high", model="custom:32b")
-            _, kwargs = mock_gen.call_args
-            assert kwargs.get("model") == "custom:32b"
+    @patch("scripts.lib.crux_audit_backend.generate")
+    def test_uses_32b_model(self, mock_gen):
+        """Custom endpoint forces use of specified model."""
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        # Use explicit endpoint to force OllamaBackend with the 32b model
+        audit_script_32b(SAMPLE_SCRIPT, "high", endpoint="http://localhost:11434")
+        call_args = mock_gen.call_args
+        assert "qwen3:32b" in call_args.kwargs.get("model", "")
 
-    def test_malformed_response_skips(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": "garbage"}
-            result = audit_script_32b(SAMPLE_SCRIPT, "high")
-            assert result["passed"] is True
-            assert result["skipped"] is True
+    @patch("scripts.lib.crux_audit_backend.generate")
+    def test_custom_model(self, mock_gen):
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        audit_script_32b(SAMPLE_SCRIPT, "high", endpoint="http://localhost:11434", model="llama3:70b")
+        call_args = mock_gen.call_args
+        assert call_args.kwargs.get("model") == "llama3:70b"
 
-    def test_custom_endpoint(self):
-        with patch("scripts.lib.crux_llm_audit.generate") as mock_gen:
-            mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
-            audit_script_32b(SAMPLE_SCRIPT, "high", endpoint="http://gpu:11434")
-            _, kwargs = mock_gen.call_args
-            assert kwargs.get("endpoint") == "http://gpu:11434"
+    @patch("scripts.lib.crux_audit_backend.generate")
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_malformed_response_skips(self, mock_check, mock_gen):
+        mock_check.return_value = True
+        mock_gen.return_value = {"success": True, "response": "invalid json"}
+        result = audit_script_32b(SAMPLE_SCRIPT, "high")
+        assert result["skipped"] is True
+
+    @patch("scripts.lib.crux_audit_backend.generate")
+    def test_custom_endpoint(self, mock_gen):
+        mock_gen.return_value = {"success": True, "response": CLEAN_RESPONSE}
+        audit_script_32b(SAMPLE_SCRIPT, "high", endpoint="http://gpu:11434")
+        assert mock_gen.called

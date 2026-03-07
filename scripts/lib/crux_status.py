@@ -520,59 +520,38 @@ print(len(mcp_server._tool_manager._tools))
                 "message": f"Command not found: {', '.join(bad_commands)}",
             })
 
-    # --- Ollama reachable ---
+    # --- Audit backend available (PLAN-169) ---
     try:
-        from scripts.lib.crux_ollama import check_ollama_running
-        ollama_ok = check_ollama_running()
+        from scripts.lib.crux_audit_backend import get_backend_status
+        backend_status = get_backend_status()
+        active = backend_status["active_backend"]
+
+        # Check passes if any backend is available (not just Ollama)
+        is_disabled = "DISABLED" in active
         checks.append({
-            "name": "Ollama reachable",
-            "passed": ollama_ok,
-            "message": "Ollama is running" if ollama_ok else "Ollama not reachable at localhost:11434",
-        })
-    except Exception:
-        checks.append({
-            "name": "Ollama reachable",
-            "passed": False,
-            "message": "Could not check Ollama status",
+            "name": "Audit backend",
+            "passed": not is_disabled,
+            "message": f"Active: {active}",
         })
 
-    # --- Audit models available ---
-    try:
-        from scripts.lib.crux_ollama import list_models
-        from scripts.lib.crux_llm_audit import DEFAULT_MODEL_8B, DEFAULT_MODEL_32B
-        models_result = list_models()
-        if models_result.get("success"):
-            model_names = [m.get("name", "") for m in models_result.get("models", [])]
-            has_8b = any(n.startswith(DEFAULT_MODEL_8B) for n in model_names)
-            has_32b = any(n.startswith(DEFAULT_MODEL_32B) for n in model_names)
-            if has_8b and has_32b:
-                checks.append({
-                    "name": "Audit models available",
-                    "passed": True,
-                    "message": f"Both {DEFAULT_MODEL_8B} and {DEFAULT_MODEL_32B} are loaded",
-                })
-            else:
-                missing = []
-                if not has_8b:
-                    missing.append(DEFAULT_MODEL_8B)
-                if not has_32b:
-                    missing.append(DEFAULT_MODEL_32B)
-                checks.append({
-                    "name": "Audit models available",
-                    "passed": False,
-                    "message": f"Missing models: {', '.join(missing)}",
-                })
-        else:
+        # Additional info about fallback availability
+        if not backend_status["ollama_available"] and backend_status["claude_available"]:
             checks.append({
-                "name": "Audit models available",
-                "passed": False,
-                "message": "Could not list Ollama models",
+                "name": "Audit fallback",
+                "passed": True,
+                "message": "Ollama down, using Claude subagent fallback",
             })
-    except Exception:
+        elif is_disabled:
+            checks.append({
+                "name": "Audit fallback",
+                "passed": False,
+                "message": "No audit backend available (Ollama down, Claude CLI not found)",
+            })
+    except Exception as exc:
         checks.append({
-            "name": "Audit models available",
+            "name": "Audit backend",
             "passed": False,
-            "message": "Could not check audit models",
+            "message": f"Could not check audit backend: {exc}",
         })
 
     # --- Background processor status ---

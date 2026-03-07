@@ -3,6 +3,7 @@
 import json
 import os
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -528,15 +529,28 @@ class TestCheckLiveness:
 
     # --- MCP server loadable ---
 
-    def test_mcp_loadable_passes(self, env):
+    def test_mcp_loadable_passes(self, env, monkeypatch):
         from scripts.lib.crux_status import check_liveness
+        import subprocess
+        # Mock subprocess.run to simulate MCP server loading successfully
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "37\n"
+        mock_result.stderr = ""
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kw: mock_result)
         checks = check_liveness(project_dir=env["project"], home=env["home"])
         mcp_check = next(c for c in checks if "mcp loadable" in c["name"].lower())
         assert mcp_check["passed"] is True
-        assert "37" in mcp_check["message"]  # 37 tools
+        assert "37" in mcp_check["message"]
 
-    def test_mcp_loadable_reports_tool_count(self, env):
+    def test_mcp_loadable_reports_tool_count(self, env, monkeypatch):
         from scripts.lib.crux_status import check_liveness
+        import subprocess
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "42\n"
+        mock_result.stderr = ""
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kw: mock_result)
         checks = check_liveness(project_dir=env["project"], home=env["home"])
         mcp_check = next(c for c in checks if "mcp loadable" in c["name"].lower())
         assert "tools" in mcp_check["message"].lower()
@@ -695,13 +709,20 @@ class TestVerifyHealth:
     def test_all_passed_is_true_when_everything_passes(self, env, monkeypatch):
         from scripts.lib.crux_status import verify_health
         import sys
-        import scripts.lib.crux_ollama as ollama_mod
-        # Mock Ollama to always be available with both models
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: True)
-        monkeypatch.setattr(ollama_mod, "list_models", lambda **kw: {
-            "success": True,
-            "models": [{"name": "qwen3:8b"}, {"name": "qwen3:32b"}],
+        import subprocess
+        import scripts.lib.crux_audit_backend as backend_mod
+        # Mock audit backend to pass (PLAN-169)
+        monkeypatch.setattr(backend_mod, "get_backend_status", lambda: {
+            "active_backend": "Ollama (qwen3:8b)",
+            "ollama_available": True,
+            "claude_available": False,
         })
+        # Mock subprocess for MCP check
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "37\n"
+        mock_result.stderr = ""
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kw: mock_result)
         # Set up everything to pass
         _setup_hooks(env["project"])
         # Fix hook command to use real python
@@ -739,89 +760,70 @@ class TestVerifyHealth:
 # New liveness checks — Ollama, processors, cross-project, Figma
 # ---------------------------------------------------------------------------
 
-class TestOllamaLivenessCheck:
-    def test_ollama_reachable_when_running(self, env, monkeypatch):
-        from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_ollama as ollama_mod
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: True)
-        checks = check_liveness(project_dir=env["project"], home=env["home"])
-        ollama_check = next(c for c in checks if "ollama reachable" in c["name"].lower())
-        assert ollama_check["passed"] is True
-        assert "running" in ollama_check["message"].lower()
+class TestAuditBackendLivenessCheck:
+    """Tests for the PLAN-169 audit backend health check."""
 
-    def test_ollama_not_reachable(self, env, monkeypatch):
+    def test_audit_backend_passes_with_ollama(self, env, monkeypatch):
         from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_ollama as ollama_mod
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: False)
-        checks = check_liveness(project_dir=env["project"], home=env["home"])
-        ollama_check = next(c for c in checks if "ollama reachable" in c["name"].lower())
-        assert ollama_check["passed"] is False
-
-    def test_ollama_check_error_handled(self, env, monkeypatch):
-        from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_ollama as ollama_mod
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: (_ for _ in ()).throw(RuntimeError("fail")))
-        checks = check_liveness(project_dir=env["project"], home=env["home"])
-        ollama_check = next(c for c in checks if "ollama reachable" in c["name"].lower())
-        assert ollama_check["passed"] is False
-
-
-class TestAuditModelsLivenessCheck:
-    def test_both_models_available(self, env, monkeypatch):
-        from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_ollama as ollama_mod
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: True)
-        monkeypatch.setattr(ollama_mod, "list_models", lambda **kw: {
-            "success": True,
-            "models": [{"name": "qwen3:8b"}, {"name": "qwen3:32b"}],
+        import scripts.lib.crux_audit_backend as backend_mod
+        monkeypatch.setattr(backend_mod, "get_backend_status", lambda: {
+            "active_backend": "Ollama (qwen3:8b)",
+            "ollama_available": True,
+            "claude_available": False,
         })
         checks = check_liveness(project_dir=env["project"], home=env["home"])
-        model_check = next(c for c in checks if "audit models" in c["name"].lower())
-        assert model_check["passed"] is True
+        backend_check = next(c for c in checks if "audit backend" in c["name"].lower())
+        assert backend_check["passed"] is True
+        assert "Ollama" in backend_check["message"]
 
-    def test_missing_32b_model(self, env, monkeypatch):
+    def test_audit_backend_passes_with_claude_fallback(self, env, monkeypatch):
         from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_ollama as ollama_mod
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: True)
-        monkeypatch.setattr(ollama_mod, "list_models", lambda **kw: {
-            "success": True,
-            "models": [{"name": "qwen3:8b"}],
+        import scripts.lib.crux_audit_backend as backend_mod
+        monkeypatch.setattr(backend_mod, "get_backend_status", lambda: {
+            "active_backend": "Claude subagent (security)",
+            "ollama_available": False,
+            "claude_available": True,
         })
         checks = check_liveness(project_dir=env["project"], home=env["home"])
-        model_check = next(c for c in checks if "audit models" in c["name"].lower())
-        assert model_check["passed"] is False
-        assert "qwen3:32b" in model_check["message"]
+        backend_check = next(c for c in checks if "audit backend" in c["name"].lower())
+        assert backend_check["passed"] is True
+        assert "Claude" in backend_check["message"]
 
-    def test_missing_8b_model(self, env, monkeypatch):
+    def test_audit_backend_fails_when_disabled(self, env, monkeypatch):
         from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_ollama as ollama_mod
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: True)
-        monkeypatch.setattr(ollama_mod, "list_models", lambda **kw: {
-            "success": True,
-            "models": [{"name": "qwen3:32b"}],
+        import scripts.lib.crux_audit_backend as backend_mod
+        monkeypatch.setattr(backend_mod, "get_backend_status", lambda: {
+            "active_backend": "DISABLED (no LLM available)",
+            "ollama_available": False,
+            "claude_available": False,
         })
         checks = check_liveness(project_dir=env["project"], home=env["home"])
-        model_check = next(c for c in checks if "audit models" in c["name"].lower())
-        assert model_check["passed"] is False
-        assert "qwen3:8b" in model_check["message"]
+        backend_check = next(c for c in checks if "audit backend" in c["name"].lower())
+        assert backend_check["passed"] is False
+        assert "DISABLED" in backend_check["message"]
 
-    def test_list_models_fails(self, env, monkeypatch):
+    def test_audit_fallback_message_when_using_claude(self, env, monkeypatch):
         from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_ollama as ollama_mod
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: True)
-        monkeypatch.setattr(ollama_mod, "list_models", lambda **kw: {"success": False})
+        import scripts.lib.crux_audit_backend as backend_mod
+        monkeypatch.setattr(backend_mod, "get_backend_status", lambda: {
+            "active_backend": "Claude subagent (security)",
+            "ollama_available": False,
+            "claude_available": True,
+        })
         checks = check_liveness(project_dir=env["project"], home=env["home"])
-        model_check = next(c for c in checks if "audit models" in c["name"].lower())
-        assert model_check["passed"] is False
+        fallback_check = next((c for c in checks if "audit fallback" in c["name"].lower()), None)
+        assert fallback_check is not None
+        assert fallback_check["passed"] is True
+        assert "ollama down" in fallback_check["message"].lower()
 
-    def test_list_models_exception(self, env, monkeypatch):
+    def test_audit_backend_error_handled(self, env, monkeypatch):
         from scripts.lib.crux_status import check_liveness
-        import scripts.lib.crux_ollama as ollama_mod
-        monkeypatch.setattr(ollama_mod, "check_ollama_running", lambda **kw: True)
-        monkeypatch.setattr(ollama_mod, "list_models", lambda **kw: (_ for _ in ()).throw(RuntimeError("boom")))
+        import scripts.lib.crux_audit_backend as backend_mod
+        monkeypatch.setattr(backend_mod, "get_backend_status", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
         checks = check_liveness(project_dir=env["project"], home=env["home"])
-        model_check = next(c for c in checks if "audit models" in c["name"].lower())
-        assert model_check["passed"] is False
+        backend_check = next(c for c in checks if "audit backend" in c["name"].lower())
+        assert backend_check["passed"] is False
+        assert "could not check" in backend_check["message"].lower()
 
 
 class TestBackgroundProcessorLivenessCheck:
