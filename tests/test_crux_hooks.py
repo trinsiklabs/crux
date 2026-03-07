@@ -151,48 +151,58 @@ class TestHandlePostToolUseFileTracking:
     def test_tracks_edited_file(self, env):
         from scripts.lib.crux_hooks import handle_post_tool_use
 
+        # Use path within project dir (PLAN-166 validates paths)
+        file_path = os.path.join(env["project"], "src", "app.py")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
         result = handle_post_tool_use(
             event_data={
                 "tool_name": "Edit",
-                "tool_input": {"file_path": "/src/app.py"},
+                "tool_input": {"file_path": file_path},
             },
             project_dir=env["project"],
             home=env["home"],
         )
         assert result["status"] == "ok"
-        assert result["file_tracked"] == "/src/app.py"
+        assert result["file_tracked"] == file_path
 
         state = load_session(env["crux_dir"])
-        assert "/src/app.py" in state.files_touched
+        assert file_path in state.files_touched
 
     def test_tracks_written_file(self, env):
         from scripts.lib.crux_hooks import handle_post_tool_use
 
+        file_path = os.path.join(env["project"], "src", "new_file.py")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
         handle_post_tool_use(
             event_data={
                 "tool_name": "Write",
-                "tool_input": {"file_path": "/src/new_file.py"},
+                "tool_input": {"file_path": file_path},
             },
             project_dir=env["project"],
             home=env["home"],
         )
         state = load_session(env["crux_dir"])
-        assert "/src/new_file.py" in state.files_touched
+        assert file_path in state.files_touched
 
     def test_no_duplicate_file_tracking(self, env):
         from scripts.lib.crux_hooks import handle_post_tool_use
+
+        file_path = os.path.join(env["project"], "src", "app.py")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
         for _ in range(3):
             handle_post_tool_use(
                 event_data={
                     "tool_name": "Edit",
-                    "tool_input": {"file_path": "/src/app.py"},
+                    "tool_input": {"file_path": file_path},
                 },
                 project_dir=env["project"],
                 home=env["home"],
             )
         state = load_session(env["crux_dir"])
-        assert state.files_touched.count("/src/app.py") == 1
+        assert state.files_touched.count(file_path) == 1
 
     def test_ignores_non_file_tools(self, env):
         from scripts.lib.crux_hooks import handle_post_tool_use

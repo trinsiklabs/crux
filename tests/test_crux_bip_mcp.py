@@ -132,9 +132,11 @@ class TestBIPApprove:
             draft_text="just shipped crux adopt #buildinpublic",
         )
         assert result["status"] in ("saved", "queued")
-        assert os.path.exists(result["draft_path"])
-        content = Path(result["draft_path"]).read_text()
-        assert "crux adopt" in content
+        # Draft path not exposed in response (PLAN-166), verify via filesystem
+        drafts_dir = os.path.join(env["project"], ".crux", "bip", "drafts")
+        draft_files = list(Path(drafts_dir).glob("*.md"))
+        assert len(draft_files) >= 1
+        assert "crux adopt" in draft_files[0].read_text()
 
     def test_records_history(self, env):
         handle_bip_approve(

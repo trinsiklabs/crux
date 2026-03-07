@@ -22,8 +22,8 @@ def server_module(monkeypatch):
 def live_env(tmp_path, monkeypatch):
     """Full Crux environment wired to the MCP server env vars."""
     home = tmp_path / "home"
-    project = tmp_path / "project"
     home.mkdir()
+    project = home / "project"
     project.mkdir()
 
     init_user(home=str(home))

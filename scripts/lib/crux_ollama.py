@@ -21,7 +21,7 @@ def _validate_endpoint(endpoint: str) -> None:
         warnings.warn(
             f"Using insecure HTTP for non-localhost endpoint: {endpoint}. "
             "Consider using HTTPS for remote connections.",
-            SecurityWarning,
+            UserWarning,
             stacklevel=3,
         )
 

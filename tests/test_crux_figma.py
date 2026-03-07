@@ -104,14 +104,14 @@ class TestRequest:
         mock_urlopen.side_effect = urllib.error.URLError("connection refused")
         result = _request("/v1/files/abc", "token")
         assert result["success"] is False
-        assert "connection refused" in result["error"]
+        assert result["error"]  # Generic error message (PLAN-166)
 
     @patch("scripts.lib.crux_figma.urllib.request.urlopen")
     def test_generic_error(self, mock_urlopen):
         mock_urlopen.side_effect = RuntimeError("unexpected")
         result = _request("/v1/files/abc", "token")
         assert result["success"] is False
-        assert "unexpected" in result["error"]
+        assert result["error"]  # Generic error message (PLAN-166)
 
     @patch("scripts.lib.crux_figma.urllib.request.urlopen")
     def test_http_error_unreadable_body(self, mock_urlopen):
@@ -120,7 +120,7 @@ class TestRequest:
         mock_urlopen.side_effect = err
         result = _request("/v1/files/abc", "token")
         assert result["success"] is False
-        assert result["body"] == ""
+        assert result["error"]  # Generic error, no body exposed (PLAN-166)
 
 
 # ---------------------------------------------------------------------------

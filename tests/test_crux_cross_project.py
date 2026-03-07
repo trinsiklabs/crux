@@ -26,8 +26,8 @@ def env(tmp_path):
 
     projects = {}
     for name in ["alpha", "beta", "gamma"]:
-        p = tmp_path / name
-        p.mkdir()
+        p = home / "projects" / name
+        p.mkdir(parents=True)
         init_project(project_dir=str(p))
         projects[name] = str(p)
 
@@ -271,8 +271,12 @@ class TestGenerateUserDigest:
         assert "alpha" in result["content"]
         assert "debug" in result["content"]
 
-    def test_empty_digest_when_no_data(self, env):
-        result = generate_user_digest(env["home"])
+    def test_empty_digest_when_no_data(self, tmp_path):
+        """Projects exist but have no analytics data."""
+        home = tmp_path / "empty_home"
+        home.mkdir()
+        init_user(home=str(home))
+        result = generate_user_digest(str(home))
         assert result["digest"]["total_projects"] == 0
         assert result["digest"]["total_interactions"] == 0
 

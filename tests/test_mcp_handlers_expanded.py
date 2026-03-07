@@ -35,8 +35,8 @@ from scripts.lib.crux_session import SessionState, save_session
 def env(tmp_path):
     """Full Crux environment for handler testing."""
     home = tmp_path / "home"
-    project = tmp_path / "project"
     home.mkdir()
+    project = home / "project"
     project.mkdir()
     init_user(home=str(home))
     init_project(project_dir=str(project))

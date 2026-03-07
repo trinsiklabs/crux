@@ -11,7 +11,6 @@ import json
 import os
 import shutil
 import tempfile
-import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -304,15 +303,12 @@ def sync_claude_code(project_dir: str, home: str) -> SyncResult:
             body = strip_frontmatter(mode_file.read_text()).strip()
             meta = _MODE_META.get(mode_name, {"description": f"{mode_name} specialist", "tools": "Read, Grep, Glob"})
 
-            # Use yaml.dump for safe YAML serialization to prevent injection
-            frontmatter_data = {
-                "name": mode_name,
-                "description": meta["description"],
-                "tools": meta["tools"],
-            }
+            # Build frontmatter — values come from _MODE_META (controlled internal data)
+            # and mode_name is already validated by validate_safe_filename above
+            frontmatter = f"---\nname: {mode_name}\ndescription: {meta['description']}\ntools: {meta['tools']}\n"
             if "permissionMode" in meta:
-                frontmatter_data["permissionMode"] = meta["permissionMode"]
-            frontmatter = "---\n" + yaml.dump(frontmatter_data, default_flow_style=False, allow_unicode=True) + "---\n\n"
+                frontmatter += f"permissionMode: {meta['permissionMode']}\n"
+            frontmatter += "---\n\n"
 
             agent_path = os.path.join(agents_dir, f"{mode_name}.md")
             _safe_write(agent_path, frontmatter + body)
