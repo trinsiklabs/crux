@@ -44,10 +44,10 @@ def list_models(endpoint: str = DEFAULT_ENDPOINT) -> dict:
             data = json.loads(resp.read())
             return {"success": True, "models": data.get("models", [])}
     except (URLError, TimeoutError, OSError) as exc:
-        _logger.exception("Connection failed during list_models")
+        _logger.debug("Connection failed during list_models: %s", exc)
         return {"success": False, "error": "Connection failed", "models": []}
     except (json.JSONDecodeError, ValueError) as exc:
-        _logger.exception("Invalid response during list_models")
+        _logger.debug("Invalid response during list_models: %s", exc)
         return {"success": False, "error": "Invalid response from server", "models": []}
 
 
@@ -68,10 +68,10 @@ def pull_model(name: str, endpoint: str = DEFAULT_ENDPOINT) -> dict:
             data = json.loads(resp.read())
             return {"success": True, "model": name, "status": data.get("status", "unknown")}
     except (URLError, TimeoutError, OSError) as exc:
-        _logger.exception("Connection failed during pull_model for %s", name)
+        _logger.debug("Connection failed during pull_model for %s", name)
         return {"success": False, "error": "Connection failed", "model": name}
     except (json.JSONDecodeError, ValueError) as exc:
-        _logger.exception("Invalid response during pull_model for %s", name)
+        _logger.debug("Invalid response during pull_model for %s", name)
         return {"success": False, "error": "Invalid response from server", "model": name}
 
 
@@ -109,8 +109,8 @@ def generate(
                 "done": data.get("done", True),
             }
     except (URLError, TimeoutError, OSError) as exc:
-        _logger.exception("Connection failed during generate")
+        _logger.debug("Connection failed during generate")
         return {"success": False, "error": "Connection failed"}
     except (json.JSONDecodeError, ValueError) as exc:
-        _logger.exception("Invalid response during generate")
+        _logger.debug("Invalid response during generate")
         return {"success": False, "error": "Invalid response from server"}

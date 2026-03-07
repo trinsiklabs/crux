@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -406,13 +407,44 @@ def check_liveness(project_dir: str, home: str) -> list[dict]:
         })
 
     # --- MCP server loadable ---
+    # Use venv Python if available, otherwise fall back to system Python
+    user_paths = get_user_paths(home)
+    crux_home = str(user_paths.root)
+    venv_python = Path(crux_home) / ".venv" / "bin" / "python"
+    python_cmd = str(venv_python) if venv_python.exists() else "python3"
+    mcp_test_code = """
+import sys
+sys.path.insert(0, '{crux_home}')
+from scripts.lib.crux_mcp_server import mcp as mcp_server
+print(len(mcp_server._tool_manager._tools))
+""".format(crux_home=crux_home)
     try:
-        from scripts.lib.crux_mcp_server import mcp as mcp_server
-        tool_count = len(mcp_server._tool_manager._tools)
+        result = subprocess.run(
+            [python_cmd, "-c", mcp_test_code],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "PYTHONPATH": crux_home},
+        )
+        if result.returncode == 0:
+            tool_count = int(result.stdout.strip())
+            checks.append({
+                "name": "MCP loadable",
+                "passed": True,
+                "message": f"MCP server loaded with {tool_count} tools",
+            })
+        else:
+            error_msg = result.stderr.strip().split('\n')[-1] if result.stderr else "Unknown error"
+            checks.append({
+                "name": "MCP loadable",
+                "passed": False,
+                "message": f"MCP server failed to load: {error_msg}",
+            })
+    except subprocess.TimeoutExpired:
         checks.append({
             "name": "MCP loadable",
-            "passed": True,
-            "message": f"MCP server loaded with {tool_count} tools",
+            "passed": False,
+            "message": "MCP server check timed out",
         })
     except Exception as exc:
         checks.append({
