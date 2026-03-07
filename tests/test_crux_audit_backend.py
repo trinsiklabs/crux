@@ -1,4 +1,4 @@
-"""Tests for audit backend abstraction (PLAN-169)."""
+"""Tests for audit backend abstraction (PLAN-169, PLAN-170)."""
 
 from __future__ import annotations
 
@@ -10,12 +10,15 @@ import pytest
 from scripts.lib.crux_audit_backend import (
     AuditBackend,
     AuditFinding,
+    AuditRequiredError,
     AuditResult,
     ClaudeSubagentBackend,
     DisabledBackend,
     OllamaBackend,
     _format_audit_prompt,
     _parse_audit_response,
+    detect_context_mode,
+    detect_opencode_context,
     get_audit_backend,
     get_backend_status,
 )
@@ -323,3 +326,143 @@ class TestBackendProtocol:
     def test_disabled_implements_protocol(self):
         backend = DisabledBackend()
         assert isinstance(backend, AuditBackend)
+
+
+# ---------------------------------------------------------------------------
+# OpenCode enforcement tests (PLAN-170)
+# ---------------------------------------------------------------------------
+
+
+class TestOpenCodeDetection:
+    def test_detect_opencode_from_env(self):
+        with patch.dict("os.environ", {"CRUX_TOOL": "opencode"}):
+            assert detect_opencode_context() is True
+
+    def test_detect_claude_code_from_env(self):
+        with patch.dict("os.environ", {"CRUX_TOOL": "claude-code"}):
+            assert detect_opencode_context() is False
+
+    def test_detect_claude_code_entry_point(self):
+        with patch.dict("os.environ", {"CLAUDE_CODE_ENTRY_POINT": "1"}, clear=False):
+            # Clear CRUX_TOOL to test fallback
+            env = {"CLAUDE_CODE_ENTRY_POINT": "1"}
+            with patch.dict("os.environ", env, clear=True):
+                assert detect_opencode_context() is False
+
+    def test_context_mode_unknown_default(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("pathlib.Path.exists", return_value=False):
+                mode = detect_context_mode()
+                assert mode == "unknown"
+
+
+class TestOpenCodeEnforcement:
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    @patch("scripts.lib.crux_audit_backend.detect_opencode_context")
+    def test_opencode_raises_when_ollama_unavailable(self, mock_detect, mock_check):
+        mock_detect.return_value = True
+        mock_check.return_value = False
+
+        import scripts.lib.crux_audit_backend as mod
+        mod._cached_backend = None
+        mod._cached_backend_check_time = 0
+
+        with pytest.raises(AuditRequiredError) as exc_info:
+            get_audit_backend(force_refresh=True, context="auto")
+
+        assert "OpenCode requires local Ollama" in str(exc_info.value)
+        assert "ollama serve" in str(exc_info.value)
+
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_opencode_explicit_context_raises(self, mock_check):
+        mock_check.return_value = False
+
+        import scripts.lib.crux_audit_backend as mod
+        mod._cached_backend = None
+        mod._cached_backend_check_time = 0
+
+        with pytest.raises(AuditRequiredError):
+            get_audit_backend(force_refresh=True, context="opencode")
+
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    def test_opencode_with_ollama_works(self, mock_check):
+        mock_check.return_value = True
+
+        import scripts.lib.crux_audit_backend as mod
+        mod._cached_backend = None
+        mod._cached_backend_check_time = 0
+
+        backend = get_audit_backend(force_refresh=True, context="opencode")
+        assert isinstance(backend, OllamaBackend)
+
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    @patch.object(ClaudeSubagentBackend, "_find_claude_binary")
+    def test_claude_code_still_falls_back(self, mock_find, mock_check):
+        mock_check.return_value = False
+        mock_find.return_value = "/usr/local/bin/claude"
+
+        import scripts.lib.crux_audit_backend as mod
+        mod._cached_backend = None
+        mod._cached_backend_check_time = 0
+
+        # Claude Code mode should still fall back
+        backend = get_audit_backend(force_refresh=True, context="claude-code")
+        assert isinstance(backend, ClaudeSubagentBackend)
+
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    @patch.object(ClaudeSubagentBackend, "_find_claude_binary")
+    def test_enforce_opencode_can_be_disabled(self, mock_find, mock_check):
+        mock_check.return_value = False
+        mock_find.return_value = None  # No Claude either
+
+        import scripts.lib.crux_audit_backend as mod
+        mod._cached_backend = None
+        mod._cached_backend_check_time = 0
+
+        # With enforce_opencode=False, should not raise even in opencode context
+        backend = get_audit_backend(
+            force_refresh=True,
+            context="opencode",
+            enforce_opencode=False,
+        )
+        # Falls through to DisabledBackend since both Ollama and Claude unavailable
+        assert isinstance(backend, DisabledBackend)
+
+
+class TestBackendStatusWithMode:
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    @patch("scripts.lib.crux_audit_backend.detect_context_mode")
+    @patch.object(ClaudeSubagentBackend, "_find_claude_binary")
+    def test_status_shows_opencode_blocked(self, mock_find, mock_mode, mock_check):
+        mock_check.return_value = False
+        mock_mode.return_value = "opencode"
+        mock_find.return_value = None
+
+        import scripts.lib.crux_audit_backend as mod
+        mod._cached_backend = None
+        mod._cached_backend_check_time = 0
+
+        status = get_backend_status()
+
+        assert status["context_mode"] == "opencode"
+        assert status["ollama_required"] is True
+        assert status["audit_blocked"] is True
+        assert "BLOCKED" in status["active_backend"]
+
+    @patch("scripts.lib.crux_audit_backend.check_ollama_running")
+    @patch("scripts.lib.crux_audit_backend.detect_context_mode")
+    @patch.object(ClaudeSubagentBackend, "_find_claude_binary")
+    def test_status_shows_claude_code_fallback(self, mock_find, mock_mode, mock_check):
+        mock_check.return_value = False
+        mock_mode.return_value = "claude-code"
+        mock_find.return_value = "/usr/local/bin/claude"
+
+        import scripts.lib.crux_audit_backend as mod
+        mod._cached_backend = None
+        mod._cached_backend_check_time = 0
+
+        status = get_backend_status()
+
+        assert status["context_mode"] == "claude-code"
+        assert status["ollama_required"] is False
+        assert status["audit_blocked"] is False

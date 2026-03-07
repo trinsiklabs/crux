@@ -17,6 +17,18 @@ from scripts.lib.crux_audit_backend import (
     AuditResult,
     OllamaBackend,
 )
+import scripts.lib.crux_audit_backend as audit_backend_mod
+
+
+@pytest.fixture(autouse=True)
+def reset_backend_cache():
+    """Reset the backend cache before each test to ensure isolation."""
+    audit_backend_mod._cached_backend = None
+    audit_backend_mod._cached_backend_check_time = 0
+    yield
+    # Cleanup after test
+    audit_backend_mod._cached_backend = None
+    audit_backend_mod._cached_backend_check_time = 0
 
 
 SAMPLE_SCRIPT = """#!/bin/bash
