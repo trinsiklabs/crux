@@ -1,22 +1,31 @@
 """Figma REST API client for importing design data.
 
 Uses only stdlib (urllib.request). Auth via personal access token
-passed as parameter — never stored in code.
+passed as parameter - never stored in code.
+
+SECURITY NOTE: The X-Figma-Token header contains sensitive credentials.
+Do not log Request objects or enable HTTP debug logging in production.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 
 FIGMA_API = "https://api.figma.com"
+
+_logger = logging.getLogger(__name__)
 
 
 def _request(path: str, token: str, timeout: int = 30) -> dict:
     """Make an authenticated GET request to the Figma API."""
     url = f"{FIGMA_API}{path}"
+    # SECURITY: Request object contains auth token in headers.
+    # Never log or expose Request objects in error messages.
     req = urllib.request.Request(url, headers={
         "X-Figma-Token": token,
         "Content-Type": "application/json",
@@ -25,37 +34,50 @@ def _request(path: str, token: str, timeout: int = 30) -> dict:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return {"success": True, "data": json.loads(resp.read().decode())}
     except urllib.error.HTTPError as e:
-        body = ""
+        # Log error body for debugging but don't expose to caller
         try:
             body = e.read().decode()
+            _logger.debug("Figma API error body: %s", body)
         except Exception:
             pass
-        return {"success": False, "error": f"HTTP {e.code}", "status": e.code, "body": body}
+        return {"success": False, "error": f"HTTP {e.code}", "status": e.code}
     except urllib.error.URLError as e:
-        return {"success": False, "error": str(e.reason)}
+        _logger.debug("Figma API URL error: %s", e.reason)
+        return {"success": False, "error": "Connection failed"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        _logger.exception("Unexpected error during Figma API request")
+        return {"success": False, "error": "Request failed"}
+
+
+def _encode_file_key(file_key: str) -> str:
+    """URL-encode a Figma file key for safe path inclusion."""
+    return urllib.parse.quote(file_key, safe="")
 
 
 def get_file(file_key: str, token: str) -> dict:
-    """GET /v1/files/:key — returns document structure."""
-    return _request(f"/v1/files/{file_key}", token)
+    """GET /v1/files/:key - returns document structure."""
+    return _request(f"/v1/files/{_encode_file_key(file_key)}", token)
 
 
 def get_file_styles(file_key: str, token: str) -> dict:
-    """GET /v1/files/:key/styles — returns design tokens."""
-    return _request(f"/v1/files/{file_key}/styles", token)
+    """GET /v1/files/:key/styles - returns design tokens."""
+    return _request(f"/v1/files/{_encode_file_key(file_key)}/styles", token)
 
 
 def get_file_components(file_key: str, token: str) -> dict:
-    """GET /v1/files/:key/components — returns component library."""
-    return _request(f"/v1/files/{file_key}/components", token)
+    """GET /v1/files/:key/components - returns component library."""
+    return _request(f"/v1/files/{_encode_file_key(file_key)}/components", token)
 
 
 def get_images(file_key: str, node_ids: list[str], token: str, fmt: str = "png") -> dict:
-    """GET /v1/images/:key — exports node renders."""
-    ids_param = ",".join(node_ids)
-    return _request(f"/v1/images/{file_key}?ids={ids_param}&format={fmt}", token)
+    """GET /v1/images/:key - exports node renders."""
+    # URL-encode each node ID and join with commas
+    encoded_ids = ",".join(urllib.parse.quote(nid, safe="") for nid in node_ids)
+    encoded_fmt = urllib.parse.quote(fmt, safe="")
+    return _request(
+        f"/v1/images/{_encode_file_key(file_key)}?ids={encoded_ids}&format={encoded_fmt}",
+        token
+    )
 
 
 def _parse_color(color: dict) -> str | None:

@@ -3,14 +3,32 @@
 from __future__ import annotations
 
 import json
+import logging
+import warnings
 from urllib.error import URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 DEFAULT_ENDPOINT = "http://localhost:11434"
 
+_logger = logging.getLogger(__name__)
+
+
+def _validate_endpoint(endpoint: str) -> None:
+    """Warn if using insecure HTTP on non-localhost endpoints."""
+    parsed = urlparse(endpoint)
+    if parsed.scheme == "http" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        warnings.warn(
+            f"Using insecure HTTP for non-localhost endpoint: {endpoint}. "
+            "Consider using HTTPS for remote connections.",
+            SecurityWarning,
+            stacklevel=3,
+        )
+
 
 def check_ollama_running(endpoint: str = DEFAULT_ENDPOINT) -> bool:
     """Return True if the Ollama server is reachable."""
+    _validate_endpoint(endpoint)
     try:
         with urlopen(f"{endpoint}/api/tags", timeout=5) as resp:
             return resp.status == 200
@@ -20,14 +38,17 @@ def check_ollama_running(endpoint: str = DEFAULT_ENDPOINT) -> bool:
 
 def list_models(endpoint: str = DEFAULT_ENDPOINT) -> dict:
     """List models available in Ollama."""
+    _validate_endpoint(endpoint)
     try:
         with urlopen(f"{endpoint}/api/tags", timeout=10) as resp:
             data = json.loads(resp.read())
             return {"success": True, "models": data.get("models", [])}
     except (URLError, TimeoutError, OSError) as exc:
-        return {"success": False, "error": f"Connection failed: {exc}", "models": []}
+        _logger.exception("Connection failed during list_models")
+        return {"success": False, "error": "Connection failed", "models": []}
     except (json.JSONDecodeError, ValueError) as exc:
-        return {"success": False, "error": f"Invalid response: {exc}", "models": []}
+        _logger.exception("Invalid response during list_models")
+        return {"success": False, "error": "Invalid response from server", "models": []}
 
 
 def pull_model(name: str, endpoint: str = DEFAULT_ENDPOINT) -> dict:
@@ -35,6 +56,7 @@ def pull_model(name: str, endpoint: str = DEFAULT_ENDPOINT) -> dict:
     if not name:
         return {"success": False, "error": "Model name required"}
 
+    _validate_endpoint(endpoint)
     req = Request(
         f"{endpoint}/api/pull",
         data=json.dumps({"name": name}).encode(),
@@ -46,9 +68,11 @@ def pull_model(name: str, endpoint: str = DEFAULT_ENDPOINT) -> dict:
             data = json.loads(resp.read())
             return {"success": True, "model": name, "status": data.get("status", "unknown")}
     except (URLError, TimeoutError, OSError) as exc:
-        return {"success": False, "error": f"Connection failed: {exc}", "model": name}
+        _logger.exception("Connection failed during pull_model for %s", name)
+        return {"success": False, "error": "Connection failed", "model": name}
     except (json.JSONDecodeError, ValueError) as exc:
-        return {"success": False, "error": f"Invalid response: {exc}", "model": name}
+        _logger.exception("Invalid response during pull_model for %s", name)
+        return {"success": False, "error": "Invalid response from server", "model": name}
 
 
 def generate(
@@ -64,6 +88,7 @@ def generate(
     if not prompt:
         return {"success": False, "error": "Prompt required"}
 
+    _validate_endpoint(endpoint)
     payload: dict = {"model": model, "prompt": prompt, "stream": False}
     if system:
         payload["system"] = system
@@ -84,6 +109,8 @@ def generate(
                 "done": data.get("done", True),
             }
     except (URLError, TimeoutError, OSError) as exc:
-        return {"success": False, "error": f"Connection failed: {exc}"}
+        _logger.exception("Connection failed during generate")
+        return {"success": False, "error": "Connection failed"}
     except (json.JSONDecodeError, ValueError) as exc:
-        return {"success": False, "error": f"Invalid response: {exc}"}
+        _logger.exception("Invalid response during generate")
+        return {"success": False, "error": "Invalid response from server"}

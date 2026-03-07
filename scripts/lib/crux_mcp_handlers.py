@@ -7,11 +7,73 @@ The MCP server module wraps these with @mcp.tool().
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+
+# PLAN-166: Security constants and validation functions
+MAX_DRAFT_SIZE = 50000  # Maximum draft text size in bytes
+MAX_LIST_RESULTS = 1000  # Maximum results to return from list operations
+DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")  # YYYY-MM-DD format
+SAFE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")  # Safe characters for path components
+KNOWN_MODES = frozenset([
+    "code", "architect", "ask", "debug", "review", "test",
+    "docs", "design", "security", "build-in-public", "default"
+])
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_path_param(value: str, param_name: str = "parameter") -> None:
+    """PLAN-166: Validate a path parameter contains only safe characters.
+
+    Raises ValueError if validation fails.
+    """
+    if not value:
+        raise ValueError(f"{param_name} cannot be empty")
+    if not SAFE_NAME_PATTERN.match(value):
+        raise ValueError(f"{param_name} contains invalid characters")
+    # Prevent path traversal attempts
+    if ".." in value or value.startswith("/") or value.startswith("\\"):
+        raise ValueError(f"{param_name} contains path traversal attempt")
+
+
+def _validate_date_format(date_str: str) -> None:
+    """PLAN-166: Validate date string matches YYYY-MM-DD format.
+
+    Raises ValueError if validation fails.
+    """
+    if not DATE_PATTERN.match(date_str):
+        raise ValueError(f"Invalid date format: {date_str}. Expected YYYY-MM-DD")
+
+
+def _validate_mode(mode: str) -> None:
+    """PLAN-166: Validate mode against known modes list.
+
+    Raises ValueError if mode is not recognized.
+    """
+    if mode not in KNOWN_MODES:
+        raise ValueError(f"Unknown mode: {mode}. Must be one of: {', '.join(sorted(KNOWN_MODES))}")
+
+
+def _safe_path_join(base_dir: str, *parts: str) -> str:
+    """PLAN-166: Safely join path components and validate result stays within base.
+
+    Returns the normalized path. Raises ValueError if path escapes base directory.
+    """
+    result = os.path.normpath(os.path.join(base_dir, *parts))
+    base_normalized = os.path.normpath(base_dir)
+    if not result.startswith(base_normalized + os.sep) and result != base_normalized:
+        raise ValueError("Path traversal attempt detected")
+    return result
+
+
+def _sanitize_error_message(error: Exception) -> str:
+    """PLAN-166: Return a generic error message without exposing internals."""
+    return "An error occurred while processing the request"
 
 from scripts.lib.crux_paths import get_project_paths, get_user_paths, CruxPaths
 from scripts.lib.crux_session import (
@@ -74,7 +136,13 @@ def handle_lookup_knowledge(
         if not os.path.isdir(d):
             continue
         for md_file in Path(d).glob("*.md"):
-            content = md_file.read_text()
+            # PLAN-166: Wrap file read in try/except for unhandled exceptions
+            try:
+                content = md_file.read_text()
+            except (OSError, IOError) as e:
+                logger.warning(f"Could not read knowledge file {md_file}: {e}")
+                continue
+
             name = md_file.stem
             if query_lower in content.lower() or query_lower in name.lower():
                 excerpt = content[:300].strip()
@@ -92,6 +160,10 @@ def handle_lookup_knowledge(
         if r["name"] not in seen:
             seen.add(r["name"])
             unique.append(r)
+
+    # PLAN-166: Apply size limit to prevent memory issues with large result sets
+    if len(unique) > MAX_LIST_RESULTS:
+        unique = unique[:MAX_LIST_RESULTS]
 
     return {
         "total_found": len(unique),
@@ -175,18 +247,40 @@ def handle_get_digest(home: str, date: str | None = None) -> dict:
         return {"found": False, "content": None}
 
     if date:
-        digest_file = os.path.join(digest_dir, f"{date}.md")
-        if os.path.exists(digest_file):
-            return {"found": True, "content": Path(digest_file).read_text()}
+        # PLAN-166: Validate date format to prevent path traversal
+        try:
+            _validate_date_format(date)
+        except ValueError as e:
+            return {"found": False, "content": None, "error": str(e)}
+
+        # PLAN-166: Use safe path join to prevent traversal
+        try:
+            digest_file = _safe_path_join(digest_dir, f"{date}.md")
+        except ValueError:
+            return {"found": False, "content": None, "error": "Invalid date parameter"}
+
+        # PLAN-166: Wrap file read in try/except for unhandled exceptions
+        try:
+            if os.path.exists(digest_file):
+                return {"found": True, "content": Path(digest_file).read_text()}
+        except (OSError, IOError) as e:
+            logger.error(f"Error reading digest file: {e}")
+            return {"found": False, "content": None, "error": "Failed to read digest"}
+
         return {"found": False, "content": None}
 
     # Find latest digest
-    files = sorted(Path(digest_dir).glob("*.md"))
-    if not files:
-        return {"found": False, "content": None}
+    # PLAN-166: Wrap file operations in try/except
+    try:
+        files = sorted(Path(digest_dir).glob("*.md"))
+        if not files:
+            return {"found": False, "content": None}
 
-    latest = files[-1]
-    return {"found": True, "content": latest.read_text()}
+        latest = files[-1]
+        return {"found": True, "content": latest.read_text()}
+    except (OSError, IOError) as e:
+        logger.error(f"Error reading digest directory: {e}")
+        return {"found": False, "content": None, "error": "Failed to read digests"}
 
 
 # ---------------------------------------------------------------------------
@@ -195,17 +289,33 @@ def handle_get_digest(home: str, date: str | None = None) -> dict:
 
 def handle_get_mode_prompt(mode: str, home: str) -> dict:
     """Get the prompt for a specific mode."""
+    # PLAN-166: Validate mode parameter to prevent path traversal
+    try:
+        _validate_path_param(mode, "mode")
+    except ValueError as e:
+        return {"found": False, "mode": mode, "prompt": None, "error": str(e)}
+
     user_paths = get_user_paths(home)
-    mode_file = os.path.join(user_paths.modes, f"{mode}.md")
 
-    if not os.path.exists(mode_file):
-        return {"found": False, "mode": mode, "prompt": None}
+    # PLAN-166: Use safe path join
+    try:
+        mode_file = _safe_path_join(user_paths.modes, f"{mode}.md")
+    except ValueError:
+        return {"found": False, "mode": mode, "prompt": None, "error": "Invalid mode parameter"}
 
-    return {
-        "found": True,
-        "mode": mode,
-        "prompt": Path(mode_file).read_text(),
-    }
+    # PLAN-166: Wrap file read in try/except
+    try:
+        if not os.path.exists(mode_file):
+            return {"found": False, "mode": mode, "prompt": None}
+
+        return {
+            "found": True,
+            "mode": mode,
+            "prompt": Path(mode_file).read_text(),
+        }
+    except (OSError, IOError) as e:
+        logger.error(f"Error reading mode file: {e}")
+        return {"found": False, "mode": mode, "prompt": None, "error": "Failed to read mode"}
 
 
 def handle_list_modes(home: str) -> dict:
@@ -218,7 +328,13 @@ def handle_list_modes(home: str) -> dict:
 
     modes: list[dict] = []
     for md_file in sorted(Path(modes_dir).glob("*.md")):
-        content = md_file.read_text().strip()
+        # PLAN-166: Wrap file read in try/except for unhandled exceptions
+        try:
+            content = md_file.read_text().strip()
+        except (OSError, IOError) as e:
+            logger.warning(f"Could not read mode file {md_file}: {e}")
+            continue
+
         modes.append({
             "name": md_file.stem,
             "excerpt": content[:200],
@@ -271,19 +387,39 @@ def handle_promote_knowledge(
     home: str,
 ) -> dict:
     """Promote a knowledge entry from project scope to user scope."""
+    # PLAN-166: Validate entry_name to prevent path traversal
+    try:
+        _validate_path_param(entry_name, "entry_name")
+    except ValueError as e:
+        return {"promoted": False, "error": str(e)}
+
     project_paths = get_project_paths(project_dir)
     user_paths = get_user_paths(home)
 
-    # Search in project knowledge
-    source = os.path.join(project_paths.knowledge, f"{entry_name}.md")
-    if not os.path.exists(source):
-        return {"promoted": False, "error": f"Entry '{entry_name}' not found in project knowledge"}
+    # PLAN-166: Use safe path join to prevent traversal
+    try:
+        source = _safe_path_join(project_paths.knowledge, f"{entry_name}.md")
+        dest = _safe_path_join(user_paths.knowledge, f"{entry_name}.md")
+    except ValueError:
+        return {"promoted": False, "error": "Invalid entry name"}
 
-    dest = os.path.join(user_paths.knowledge, f"{entry_name}.md")
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    shutil.copy2(source, dest)
+    # PLAN-166: Check for symlinks before copy to prevent symlink attacks
+    if os.path.islink(source):
+        return {"promoted": False, "error": "Cannot promote symlinked entries"}
 
-    return {"promoted": True, "from": source, "to": dest}
+    # PLAN-166: Fix TOCTOU - use try/except around copy instead of check-then-copy
+    try:
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        # Use follow_symlinks=False to prevent symlink following during copy
+        shutil.copy2(source, dest, follow_symlinks=False)
+    except FileNotFoundError:
+        return {"promoted": False, "error": "Entry not found in project knowledge"}
+    except (OSError, IOError) as e:
+        logger.error(f"Error promoting knowledge entry: {e}")
+        return {"promoted": False, "error": "Failed to promote entry"}
+
+    # PLAN-166: Don't leak internal paths in response
+    return {"promoted": True, "entry": entry_name}
 
 
 # ---------------------------------------------------------------------------
@@ -498,18 +634,28 @@ def handle_log_interaction(
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     log_file = os.path.join(log_dir, f"{today}.jsonl")
 
+    # PLAN-166: Validate mode from session state against known modes
+    active_mode = state.active_mode
+    if active_mode and active_mode not in KNOWN_MODES:
+        # Sanitize unknown modes to prevent injection
+        active_mode = "unknown"
+
     entry: dict = {
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "role": role,
         "content": content,
-        "mode": state.active_mode,
+        "mode": active_mode,
         "tool": state.active_tool,
     }
     if metadata:
         entry["metadata"] = metadata
 
-    with open(log_file, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+    try:
+        with open(log_file, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except (OSError, IOError) as e:
+        logger.error(f"Error writing interaction log: {e}")
+        return {"logged": False, "error": "Failed to write log"}
 
     return {"logged": True}
 
@@ -537,13 +683,24 @@ def handle_restore_context(project_dir: str, home: str) -> dict:
 
     parts: list[str] = []
 
+    # PLAN-166: Validate active_mode before using in path
+    active_mode = state.active_mode
+    mode_prompt = None
+
+    # Only attempt to read mode file if mode is valid
+    try:
+        _validate_path_param(active_mode, "active_mode")
+        mode_file = _safe_path_join(user_paths.modes, f"{active_mode}.md")
+        if os.path.exists(mode_file) and not os.path.islink(mode_file):
+            mode_prompt = Path(mode_file).read_text().strip()
+    except (ValueError, OSError, IOError) as e:
+        logger.warning(f"Could not load mode prompt for {active_mode}: {e}")
+
     # Mode prompt
-    mode_file = os.path.join(user_paths.modes, f"{state.active_mode}.md")
-    if os.path.exists(mode_file):
-        prompt = Path(mode_file).read_text().strip()
-        parts.append(f"## Active Mode: {state.active_mode}\n{prompt}")
+    if mode_prompt:
+        parts.append(f"## Active Mode: {active_mode}\n{mode_prompt}")
     else:
-        parts.append(f"## Active Mode: {state.active_mode}")
+        parts.append(f"## Active Mode: {active_mode}")
 
     # Session state
     parts.append(f"\n## Session State")
@@ -709,20 +866,29 @@ def handle_bip_generate(
     since = state.last_queued_at
     ctx = gather_content(project_dir=project_dir, home=home, since=since)
 
+    # PLAN-166: Apply explicit size limits before slicing to prevent memory issues
+    # Limit source lists first, then slice for response
+    unposted_commits = (ctx.unposted_commits or [])[:MAX_LIST_RESULTS][:20]
+    commit_messages = (ctx.commit_messages or [])[:MAX_LIST_RESULTS][:20]
+    files_changed = (ctx.files_changed or [])[:MAX_LIST_RESULTS][:30]
+    corrections = (ctx.corrections or [])[:MAX_LIST_RESULTS][:10]
+    knowledge_entries = (ctx.knowledge_entries or [])[:MAX_LIST_RESULTS]
+    key_decisions = (ctx.key_decisions or [])[:MAX_LIST_RESULTS][:10]
+
     return {
         "status": "ready",
         "trigger_reason": trigger.reason,
         "platform": platform,
         "context": {
-            "unposted_commits": ctx.unposted_commits[:20],
-            "commit_messages": ctx.commit_messages[:20],
-            "files_changed": ctx.files_changed[:30],
-            "corrections": [c.get("pattern", "") for c in ctx.corrections[:10]],
-            "knowledge_entries": [k["name"] for k in ctx.knowledge_entries],
+            "unposted_commits": unposted_commits,
+            "commit_messages": commit_messages,
+            "files_changed": files_changed,
+            "corrections": [c.get("pattern", "") for c in corrections],
+            "knowledge_entries": [k["name"] for k in knowledge_entries],
             "session_mode": ctx.session_mode,
             "session_tool": ctx.session_tool,
             "working_on": ctx.working_on,
-            "key_decisions": ctx.key_decisions[:10],
+            "key_decisions": key_decisions,
         },
         "voice": {
             "style": config.voice_style,
@@ -753,6 +919,13 @@ def handle_bip_approve(
         load_state, save_state, record_history, reset_counters,
     )
 
+    # PLAN-166: Enforce size limit on draft_text to prevent resource exhaustion
+    if len(draft_text) > MAX_DRAFT_SIZE:
+        return {
+            "status": "error",
+            "error": f"Draft text exceeds maximum size of {MAX_DRAFT_SIZE} bytes",
+        }
+
     crux_dir = os.path.join(project_dir, ".crux")
     bip_dir = os.path.join(crux_dir, "bip")
 
@@ -781,7 +954,9 @@ def handle_bip_approve(
         draft_id = result.get("id")
         queued = True
     except Exception as e:
-        queue_error = str(e)
+        # PLAN-166: Log full error but return generic message to prevent info disclosure
+        logger.error(f"Error queueing to Typefully: {e}")
+        queue_error = "Failed to queue draft to publishing service"
 
     # Record history
     for key in (source_keys or []):
@@ -799,9 +974,9 @@ def handle_bip_approve(
     state.interactions_since_last_post = 0
     save_state(state, bip_dir)
 
+    # PLAN-166: Don't leak internal paths in response
     return {
         "status": "queued" if queued else "saved",
-        "draft_path": draft_path,
         "draft_id": draft_id,
         "queue_error": queue_error,
     }

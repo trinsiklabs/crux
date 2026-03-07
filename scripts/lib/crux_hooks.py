@@ -8,14 +8,147 @@ Handles events from Claude Code's hooks system:
 
 Each handler receives parsed event data and returns a result dict.
 The run_hook() function dispatches stdin JSON to the correct handler.
+
+Security: PLAN-166 audit - fixes for path traversal, injection, and error handling.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import shlex
 from datetime import datetime, timezone
+from pathlib import Path
+
+# Security: Configure logging for audit trail (PLAN-166)
+_logger = logging.getLogger("crux.hooks")
+
+
+# ---------------------------------------------------------------------------
+# Security validation functions (PLAN-166)
+# ---------------------------------------------------------------------------
+
+# Allowed characters for mode names, filenames, etc.
+_SAFE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$')
+
+
+def _is_safe_name(name: str) -> bool:
+    """Validate name contains only safe characters (no path traversal)."""
+    if not name or len(name) > 128:
+        return False
+    if '..' in name or '/' in name or '\\' in name:
+        return False
+    return bool(_SAFE_NAME_PATTERN.match(name))
+
+
+def _is_safe_path(path: str, allowed_base: str) -> bool:
+    """Validate path stays within allowed_base directory."""
+    try:
+        # Resolve to absolute, canonical path
+        resolved = Path(path).resolve()
+        base_resolved = Path(allowed_base).resolve()
+        # Check path is under base
+        return str(resolved).startswith(str(base_resolved) + os.sep) or resolved == base_resolved
+    except (ValueError, OSError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Input length limits (PLAN-166 - prevent DoS via oversized inputs)
+# ---------------------------------------------------------------------------
+
+_MAX_PROMPT_LENGTH = 100 * 1024  # 100KB
+_MAX_PATH_LENGTH = 1024  # 1KB
+_MAX_TOOL_INPUT_SIZE = 100 * 1024  # 100KB for serialized tool_input
+
+
+def _truncate_for_safety(value: str, max_length: int) -> str:
+    """Truncate a string if it exceeds max_length."""
+    if len(value) > max_length:
+        return value[:max_length] + "...[TRUNCATED]"
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Sensitive data sanitization (PLAN-166)
+# ---------------------------------------------------------------------------
+
+_SENSITIVE_KEYS = frozenset({
+    'password', 'passwd', 'pwd',
+    'token', 'access_token', 'refresh_token', 'bearer',
+    'secret', 'client_secret',
+    'api_key', 'apikey', 'api-key',
+    'credential', 'credentials',
+    'auth', 'authorization',
+    'private_key', 'privatekey',
+    'ssh_key', 'sshkey',
+})
+
+# Patterns for detecting secrets in string values
+_SECRET_PATTERNS = [
+    re.compile(r'\b[A-Za-z0-9]{32,}\b'),  # Long alphanumeric strings (API keys)
+    re.compile(r'sk-[A-Za-z0-9]{20,}'),  # OpenAI-style keys
+    re.compile(r'ghp_[A-Za-z0-9]{36,}'),  # GitHub personal access tokens
+    re.compile(r'github_pat_[A-Za-z0-9_]{20,}'),  # GitHub fine-grained PAT
+    re.compile(r'xox[baprs]-[A-Za-z0-9\-]{10,}'),  # Slack tokens
+    re.compile(r'-----BEGIN [A-Z ]+ KEY-----'),  # PEM keys
+]
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """Check if a key name indicates sensitive data."""
+    key_lower = key.lower().replace('-', '_')
+    return any(sensitive in key_lower for sensitive in _SENSITIVE_KEYS)
+
+
+def _sanitize_value(value: str) -> str:
+    """Redact potential secrets from a string value."""
+    for pattern in _SECRET_PATTERNS:
+        value = pattern.sub('[REDACTED]', value)
+    return value
+
+
+def _sanitize_dict(data: dict, depth: int = 0) -> dict:
+    """Recursively sanitize a dictionary, redacting sensitive values.
+
+    PLAN-166: Prevents logging of passwords, tokens, API keys, etc.
+    """
+    if depth > 10:  # Prevent infinite recursion
+        return {"[TRUNCATED]": "max depth exceeded"}
+
+    sanitized = {}
+    for key, value in data.items():
+        if _is_sensitive_key(str(key)):
+            sanitized[key] = "[REDACTED]"
+        elif isinstance(value, dict):
+            sanitized[key] = _sanitize_dict(value, depth + 1)
+        elif isinstance(value, list):
+            sanitized[key] = [
+                _sanitize_dict(v, depth + 1) if isinstance(v, dict)
+                else _sanitize_value(str(v)) if isinstance(v, str)
+                else v
+                for v in value
+            ]
+        elif isinstance(value, str):
+            sanitized[key] = _sanitize_value(value)
+        else:
+            sanitized[key] = value
+    return sanitized
+
+
+def _sanitize_prompt(prompt: str) -> str:
+    """Sanitize a user prompt, redacting potential secrets.
+
+    PLAN-166: Prevents logging of API keys, passwords in prompts.
+    """
+    # Apply length limit first to prevent ReDoS
+    if len(prompt) > _MAX_PROMPT_LENGTH:
+        prompt = prompt[:_MAX_PROMPT_LENGTH] + "...[TRUNCATED]"
+
+    # Redact detected secret patterns
+    return _sanitize_value(prompt)
 
 from scripts.lib.crux_paths import get_project_paths, get_user_paths
 from scripts.lib.crux_session import load_session, save_session, update_session
@@ -47,11 +180,19 @@ _CORRECTION_PATTERNS = [
 ]
 
 
+_MAX_REGEX_INPUT_LENGTH = 10 * 1024  # 10KB max for regex matching (ReDoS prevention)
+
+
 def _is_correction(text: str) -> bool:
-    """Check if a user prompt contains a correction."""
+    """Check if a user prompt contains a correction.
+
+    PLAN-166: Limits input length to prevent ReDoS attacks.
+    """
     if not text.strip():
         return False
-    return any(p.search(text) for p in _CORRECTION_PATTERNS)
+    # Limit input length to prevent ReDoS (PLAN-166)
+    search_text = text[:_MAX_REGEX_INPUT_LENGTH] if len(text) > _MAX_REGEX_INPUT_LENGTH else text
+    return any(p.search(search_text) for p in _CORRECTION_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
@@ -59,19 +200,33 @@ def _is_correction(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def _log_interaction(tool_name: str, tool_input: dict, project_dir: str) -> None:
-    """Append a tool interaction to today's JSONL log."""
+    """Append a tool interaction to today's JSONL log.
+
+    PLAN-166: Sanitizes tool_input to redact sensitive data.
+    """
     paths = get_project_paths(project_dir)
     log_dir = os.path.join(str(paths.root), "analytics", "interactions")
-    os.makedirs(log_dir, exist_ok=True)
+    # PLAN-166: Create directories with restricted permissions
+    os.makedirs(log_dir, mode=0o700, exist_ok=True)
 
     log_file = os.path.join(log_dir, f"{_today()}.jsonl")
+
+    # PLAN-166: Sanitize tool_input to redact sensitive data
+    sanitized_input = _sanitize_dict(tool_input) if isinstance(tool_input, dict) else {}
+
     entry = {
         "timestamp": _now_iso(),
         "tool_name": tool_name,
-        "tool_input": tool_input,
+        "tool_input": sanitized_input,
     }
-    with open(log_file, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+
+    # PLAN-166: Write with restricted permissions (mode 0o600)
+    # Use os.open to set file permissions atomically on creation
+    fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(fd, (json.dumps(entry) + "\n").encode('utf-8'))
+    finally:
+        os.close(fd)
 
 
 def _log_conversation(
@@ -82,23 +237,37 @@ def _log_conversation(
     tool: str | None = None,
     metadata: dict | None = None,
 ) -> None:
-    """Append a conversation message to today's conversations JSONL log."""
+    """Append a conversation message to today's conversations JSONL log.
+
+    PLAN-166: Sanitizes content to redact sensitive data.
+    """
     paths = get_project_paths(project_dir)
     log_dir = os.path.join(str(paths.root), "analytics", "conversations")
-    os.makedirs(log_dir, exist_ok=True)
+    # PLAN-166: Create directories with restricted permissions
+    os.makedirs(log_dir, mode=0o700, exist_ok=True)
 
     log_file = os.path.join(log_dir, f"{_today()}.jsonl")
+
+    # PLAN-166: Sanitize content to redact potential secrets
+    sanitized_content = _sanitize_prompt(content)
+
     entry: dict = {
         "timestamp": _now_iso(),
         "role": role,
-        "content": content,
+        "content": sanitized_content,
         "mode": mode,
         "tool": tool,
     }
     if metadata:
-        entry["metadata"] = metadata
-    with open(log_file, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+        # PLAN-166: Sanitize metadata as well
+        entry["metadata"] = _sanitize_dict(metadata) if isinstance(metadata, dict) else metadata
+
+    # PLAN-166: Write with restricted permissions (mode 0o600)
+    fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(fd, (json.dumps(entry) + "\n").encode('utf-8'))
+    finally:
+        os.close(fd)
 
 
 def _count_interactions(project_dir: str) -> int:
@@ -265,11 +434,15 @@ def handle_session_start(
 
     parts: list[str] = []
 
-    # Mode prompt
-    mode_file = os.path.join(user_paths.modes, f"{state.active_mode}.md")
-    if os.path.exists(mode_file):
-        with open(mode_file) as f:
-            parts.append(f"## Active Mode: {state.active_mode}\n{f.read()}")
+    # Mode prompt (PLAN-166: validate mode name to prevent path traversal)
+    if _is_safe_name(state.active_mode):
+        mode_file = os.path.join(user_paths.modes, f"{state.active_mode}.md")
+        # Additional check: ensure resolved path stays within modes directory
+        if _is_safe_path(mode_file, user_paths.modes) and os.path.exists(mode_file):
+            with open(mode_file) as f:
+                parts.append(f"## Active Mode: {state.active_mode}\n{f.read()}")
+    else:
+        _logger.warning(f"Unsafe mode name rejected: {state.active_mode!r}")
 
     # Session state
     parts.append(f"## Session State")
@@ -302,22 +475,39 @@ def handle_post_tool_use(
     project_dir: str,
     home: str,
 ) -> dict:
-    """Handle PostToolUse — track files, log interactions, periodic processor check."""
+    """Handle PostToolUse — track files, log interactions, periodic processor check.
+
+    PLAN-166: Validates input lengths and sanitizes logged data.
+    """
     tool_name = event_data.get("tool_name", "")
     tool_input = event_data.get("tool_input", {})
     crux_dir = os.path.join(project_dir, ".crux")
 
+    # PLAN-166: Validate input types and lengths
+    if not isinstance(tool_name, str) or len(tool_name) > 256:
+        return {"status": "error", "message": "Invalid tool_name"}
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+
     result: dict = {"status": "ok"}
 
-    # Log every interaction
+    # Log every interaction (sanitization happens in _log_interaction)
     _log_interaction(tool_name, tool_input, project_dir)
 
-    # Track file touches for Edit/Write
+    # Track file touches for Edit/Write (PLAN-166: validate file paths)
     if tool_name in ("Edit", "Write"):
         file_path = tool_input.get("file_path")
-        if file_path:
-            update_session(crux_dir, add_file=file_path)
-            result["file_tracked"] = file_path
+        if file_path and isinstance(file_path, str):
+            # PLAN-166: Validate path length
+            if len(file_path) > _MAX_PATH_LENGTH:
+                _logger.warning(f"File path exceeds max length: {len(file_path)}")
+            # Security: Validate path doesn't contain traversal sequences
+            # and is within the project directory
+            elif _is_safe_path(file_path, project_dir):
+                update_session(crux_dir, add_file=file_path)
+                result["file_tracked"] = file_path
+            else:
+                _logger.warning(f"Unsafe file path rejected: {file_path!r}")
 
     # Increment BIP interaction counter
     _increment_bip_counter(project_dir, "interactions_since_last_post", 1)
@@ -344,13 +534,20 @@ def _increment_bip_counter(project_dir: str, field_name: str, amount: int = 1) -
 
 
 def _try_background_processors(project_dir: str, home: str) -> dict | None:
-    """Run background processors if thresholds are exceeded. Never raises."""
+    """Run background processors if thresholds are exceeded. Never raises.
+
+    PLAN-166: Now logs exceptions instead of silently swallowing them.
+    """
     try:
         from scripts.lib.crux_background_processor import should_process, run_processors
         if should_process(project_dir, home):
             return run_processors(project_dir, home)
-    except Exception:
+    except ImportError:
+        # Expected if background processor not available
         pass
+    except Exception as e:
+        # PLAN-166: Log unexpected errors for security audit trail
+        _logger.error(f"Background processor error: {type(e).__name__}: {e}")
     return None
 
 
@@ -390,13 +587,25 @@ def handle_user_prompt(
     project_dir: str,
     home: str,
 ) -> dict:
-    """Handle UserPromptSubmit — log conversation and detect corrections."""
+    """Handle UserPromptSubmit — log conversation and detect corrections.
+
+    PLAN-166: Sanitizes prompts and validates input lengths.
+    """
     prompt = event_data.get("prompt", "")
+
+    # PLAN-166: Validate input length
+    if not isinstance(prompt, str):
+        return {"status": "error", "message": "prompt must be a string"}
+    if len(prompt) > _MAX_PROMPT_LENGTH:
+        _logger.warning(f"Prompt exceeds max length ({len(prompt)} > {_MAX_PROMPT_LENGTH})")
+        prompt = prompt[:_MAX_PROMPT_LENGTH]
+
     detected = _is_correction(prompt)
 
     result: dict = {"status": "ok", "correction_detected": detected}
 
     # Log all non-empty user messages to conversations
+    # Note: _log_conversation handles sanitization internally
     if prompt.strip():
         state = load_session(os.path.join(project_dir, ".crux"))
         _log_conversation(
@@ -408,18 +617,27 @@ def handle_user_prompt(
         )
 
     if detected:
-        # Log the correction
+        # Log the correction with sanitized content
         paths = get_project_paths(project_dir)
-        os.makedirs(paths.corrections, exist_ok=True)
+        # PLAN-166: Create directories with restricted permissions
+        os.makedirs(paths.corrections, mode=0o700, exist_ok=True)
+
+        # PLAN-166: Sanitize prompt before logging
+        sanitized_prompt = _sanitize_prompt(prompt)
         entry = {
-            "original": prompt,
+            "original": sanitized_prompt,
             "corrected": "",
             "category": "user-correction",
             "mode": load_session(os.path.join(project_dir, ".crux")).active_mode,
             "timestamp": _now_iso(),
         }
-        with open(paths.corrections_file, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+
+        # PLAN-166: Write with restricted permissions
+        fd = os.open(paths.corrections_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            os.write(fd, (json.dumps(entry) + "\n").encode('utf-8'))
+        finally:
+            os.close(fd)
 
     return result
 
@@ -433,13 +651,22 @@ def run_hook(
     project_dir: str,
     home: str,
 ) -> dict:
-    """Parse event JSON and dispatch to the appropriate handler."""
+    """Parse event JSON and dispatch to the appropriate handler.
+
+    PLAN-166: Added JSON schema validation for security.
+    """
     try:
         event_data = json.loads(event_json)
     except (json.JSONDecodeError, TypeError):
         return {"status": "error", "message": "Invalid JSON"}
 
+    # PLAN-166: Validate event data structure
+    if not isinstance(event_data, dict):
+        return {"status": "error", "message": "Event must be a JSON object"}
+
     event_name = event_data.get("hook_event_name", "")
+    if not isinstance(event_name, str):
+        return {"status": "error", "message": "hook_event_name must be a string"}
 
     handlers = {
         "SessionStart": handle_session_start,
@@ -460,11 +687,15 @@ def run_hook(
 # ---------------------------------------------------------------------------
 
 def build_hook_settings(project_dir: str, home: str) -> dict:
-    """Build the hooks configuration for .claude/settings.local.json."""
+    """Build the hooks configuration for .claude/settings.local.json.
+
+    PLAN-166: Use shlex.quote to prevent command injection via paths.
+    """
     from scripts.lib.crux_paths import get_crux_python, get_crux_repo
     python = get_crux_python()
     crux_repo = get_crux_repo()
-    runner = f"PYTHONPATH={crux_repo} {python} -m scripts.lib.crux_hook_runner"
+    # Security: Quote paths to prevent shell injection (PLAN-166)
+    runner = f"PYTHONPATH={shlex.quote(crux_repo)} {shlex.quote(python)} -m scripts.lib.crux_hook_runner"
 
     return {
         "hooks": {

@@ -5,6 +5,8 @@ Claude Code hooks invoke this via:
 
 Reads event JSON from stdin, dispatches to crux_hooks handlers,
 writes any context output to stdout (for SessionStart/UserPromptSubmit).
+
+Security: PLAN-166 audit - added JSON validation and size limits.
 """
 
 from __future__ import annotations
@@ -13,12 +15,34 @@ import json
 import os
 import sys
 
+# PLAN-166: Maximum allowed JSON input size (1MB)
+_MAX_INPUT_SIZE = 1024 * 1024
+
+
+def _validate_event_data(data: dict) -> bool:
+    """Validate event data structure. Returns True if valid."""
+    # Must be a dict
+    if not isinstance(data, dict):
+        return False
+    # Must have hook_event_name as string
+    event_name = data.get("hook_event_name")
+    if not isinstance(event_name, str):
+        return False
+    # Allowed event types
+    if event_name not in ("SessionStart", "PostToolUse", "UserPromptSubmit", "Stop"):
+        return False
+    return True
+
 
 def main() -> None:
     project_dir = os.environ.get("CRUX_PROJECT", os.getcwd())
     home = os.environ.get("CRUX_HOME", os.environ.get("HOME", ""))
 
-    event_json = sys.stdin.read()
+    # PLAN-166: Limit input size to prevent DoS
+    event_json = sys.stdin.read(_MAX_INPUT_SIZE)
+    if len(event_json) >= _MAX_INPUT_SIZE:
+        print(json.dumps({"status": "error", "error": "Input too large"}), file=sys.stderr)
+        sys.exit(1)
 
     from scripts.lib.crux_hooks import run_hook
 

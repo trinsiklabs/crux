@@ -10,10 +10,19 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
+import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from scripts.lib.crux_paths import get_project_paths, get_user_paths
+from scripts.lib.crux_security import (
+    atomic_symlink,
+    safe_glob_files,
+    secure_makedirs,
+    secure_write_file,
+    validate_safe_filename,
+)
 from scripts.lib.crux_session import load_session, read_handoff, update_session
 
 SUPPORTED_TOOLS = ("opencode", "claude-code", "cursor", "windsurf")
@@ -121,22 +130,31 @@ class SyncResult:
 
 
 def _safe_symlink(source: str, target: str) -> None:
-    """Create a symlink, removing any existing link/file at target."""
-    if os.path.islink(target):
-        os.remove(target)
-    elif os.path.exists(target):
-        if os.path.isdir(target):
-            shutil.rmtree(target)
-        else:
-            os.remove(target)
-    os.symlink(source, target)
+    """Create a symlink atomically, removing any existing link/file at target.
+
+    Uses atomic temp file + rename pattern to prevent TOCTOU race conditions.
+    """
+    # Use atomic_symlink which handles the temp+rename pattern
+    # First, clean up any existing target atomically by renaming to temp then deleting
+    if os.path.islink(target) or os.path.exists(target):
+        target_dir = os.path.dirname(target)
+        fd, temp_del = tempfile.mkstemp(dir=target_dir, prefix='.crux_del_')
+        os.close(fd)
+        os.unlink(temp_del)
+        try:
+            os.rename(target, temp_del)  # Atomic move existing out of the way
+            if os.path.isdir(temp_del) and not os.path.islink(temp_del):
+                shutil.rmtree(temp_del)
+            else:
+                os.unlink(temp_del)
+        except OSError:
+            pass
+    atomic_symlink(source, target)
 
 
 def _safe_write(path: str, content: str) -> None:
-    """Write content to a file, creating parent directories."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(content)
+    """Write content to a file with secure permissions, creating parent directories."""
+    secure_write_file(path, content, mode=0o600)
 
 
 def _crux_repo_root() -> str:
@@ -198,7 +216,7 @@ def sync_opencode(project_dir: str, home: str) -> SyncResult:
     """Generate ~/.config/opencode/ configs from .crux/."""
     user_paths = get_user_paths(home)
     config_dir = os.path.join(home, ".config", "opencode")
-    os.makedirs(config_dir, exist_ok=True)
+    secure_makedirs(config_dir, mode=0o700)
     items: list[str] = []
 
     # Symlink modes (legacy) and agents (current OpenCode convention)
@@ -274,18 +292,27 @@ def sync_claude_code(project_dir: str, home: str) -> SyncResult:
 
     # Create agents from mode definitions
     agents_dir = os.path.join(claude_dir, "agents")
-    os.makedirs(agents_dir, exist_ok=True)
+    secure_makedirs(agents_dir, mode=0o700)
     modes_dir = user_paths.modes
     if os.path.isdir(modes_dir):
-        for mode_file in Path(modes_dir).glob("*.md"):
+        # Use safe_glob_files to prevent symlink traversal
+        for mode_file in safe_glob_files(Path(modes_dir), "*.md"):
             mode_name = mode_file.stem
+            # Validate mode_name contains only safe characters
+            if not validate_safe_filename(mode_name):
+                continue  # Skip files with unsafe names
             body = strip_frontmatter(mode_file.read_text()).strip()
             meta = _MODE_META.get(mode_name, {"description": f"{mode_name} specialist", "tools": "Read, Grep, Glob"})
 
-            frontmatter = f"---\nname: {mode_name}\ndescription: {meta['description']}\ntools: {meta['tools']}\n"
+            # Use yaml.dump for safe YAML serialization to prevent injection
+            frontmatter_data = {
+                "name": mode_name,
+                "description": meta["description"],
+                "tools": meta["tools"],
+            }
             if "permissionMode" in meta:
-                frontmatter += f"permissionMode: {meta['permissionMode']}\n"
-            frontmatter += "---\n\n"
+                frontmatter_data["permissionMode"] = meta["permissionMode"]
+            frontmatter = "---\n" + yaml.dump(frontmatter_data, default_flow_style=False, allow_unicode=True) + "---\n\n"
 
             agent_path = os.path.join(agents_dir, f"{mode_name}.md")
             _safe_write(agent_path, frontmatter + body)
@@ -293,11 +320,15 @@ def sync_claude_code(project_dir: str, home: str) -> SyncResult:
 
     # Create rules from knowledge entries
     rules_dir = os.path.join(claude_dir, "rules")
-    os.makedirs(rules_dir, exist_ok=True)
+    secure_makedirs(rules_dir, mode=0o700)
 
     for knowledge_dir in [project_paths.knowledge, user_paths.knowledge_shared]:
         if os.path.isdir(knowledge_dir):
-            for md_file in Path(knowledge_dir).glob("*.md"):
+            # Use safe_glob_files to prevent symlink traversal
+            for md_file in safe_glob_files(Path(knowledge_dir), "*.md"):
+                # Validate filename contains only safe characters
+                if not validate_safe_filename(md_file.stem):
+                    continue  # Skip files with unsafe names
                 rule_path = os.path.join(rules_dir, md_file.name)
                 _safe_write(rule_path, md_file.read_text())
                 items.append(f"rule:{md_file.stem}")
@@ -387,9 +418,8 @@ def _write_mcp_config(config_path: str, project_dir: str, home: str) -> None:
         existing["mcpServers"] = {}
     existing["mcpServers"]["crux"] = crux_mcp
 
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    with open(config_path, "w") as f:
-        json.dump(existing, f, indent=2)
+    secure_makedirs(os.path.dirname(config_path), mode=0o700)
+    secure_write_file(config_path, json.dumps(existing, indent=2), mode=0o600)
 
 
 def sync_cursor(project_dir: str, home: str) -> SyncResult:
@@ -397,13 +427,17 @@ def sync_cursor(project_dir: str, home: str) -> SyncResult:
     user_paths = get_user_paths(home)
     cursor_dir = os.path.join(project_dir, ".cursor")
     rules_dir = os.path.join(cursor_dir, "rules")
-    os.makedirs(rules_dir, exist_ok=True)
+    secure_makedirs(rules_dir, mode=0o700)
     items: list[str] = []
 
     # Mode prompts → Cursor rules (plain markdown, no frontmatter)
     modes_dir = user_paths.modes
     if os.path.isdir(modes_dir):
-        for mode_file in Path(modes_dir).glob("*.md"):
+        # Use safe_glob_files to prevent symlink traversal
+        for mode_file in safe_glob_files(Path(modes_dir), "*.md"):
+            # Validate filename contains only safe characters
+            if not validate_safe_filename(mode_file.stem):
+                continue  # Skip files with unsafe names
             body = strip_frontmatter(mode_file.read_text()).strip()
             rule_path = os.path.join(rules_dir, f"{mode_file.stem}.md")
             _safe_write(rule_path, body + "\n")
@@ -438,13 +472,17 @@ def sync_windsurf(project_dir: str, home: str) -> SyncResult:
     user_paths = get_user_paths(home)
     windsurf_dir = os.path.join(project_dir, ".windsurf")
     rules_dir = os.path.join(windsurf_dir, "rules")
-    os.makedirs(rules_dir, exist_ok=True)
+    secure_makedirs(rules_dir, mode=0o700)
     items: list[str] = []
 
     # Mode prompts → Windsurf rules (plain markdown)
     modes_dir = user_paths.modes
     if os.path.isdir(modes_dir):
-        for mode_file in Path(modes_dir).glob("*.md"):
+        # Use safe_glob_files to prevent symlink traversal
+        for mode_file in safe_glob_files(Path(modes_dir), "*.md"):
+            # Validate filename contains only safe characters
+            if not validate_safe_filename(mode_file.stem):
+                continue  # Skip files with unsafe names
             body = strip_frontmatter(mode_file.read_text()).strip()
             rule_path = os.path.join(rules_dir, f"{mode_file.stem}.md")
             _safe_write(rule_path, body + "\n")
