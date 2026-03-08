@@ -3,15 +3,24 @@ const { DateTime } = require("luxon");
 module.exports = function(eleventyConfig) {
   eleventyConfig.addPassthroughCopy("src/css");
   eleventyConfig.addPassthroughCopy("src/_includes/components");
-  
+
+  // EST timezone for all dates
   eleventyConfig.addFilter("readableDate", dateObj => {
     if (!dateObj) return '';
-    return dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    return DateTime.fromJSDate(dateObj, { zone: 'America/New_York' })
+      .toFormat('MMMM d, yyyy');
   });
-  
+
   eleventyConfig.addFilter("htmlDateString", dateObj => {
     if (!dateObj) return '';
-    return dateObj.toISOString().split('T')[0];
+    return DateTime.fromJSDate(dateObj, { zone: 'America/New_York' })
+      .toFormat('yyyy-MM-dd');
+  });
+
+  eleventyConfig.addFilter("readableDateWithTime", dateObj => {
+    if (!dateObj) return '';
+    return DateTime.fromJSDate(dateObj, { zone: 'America/New_York' })
+      .toFormat('MMMM d, yyyy h:mm a') + ' EST';
   });
   
   eleventyConfig.addFilter("limit", function (arr, limit) {

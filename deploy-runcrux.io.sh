@@ -54,6 +54,18 @@ build() {
   echo "Build complete: ${SRC_DIR}"
 }
 
+check_links() {
+  echo "Checking for broken links..."
+  if [[ -x "${SCRIPT_DIR}/scripts/check-links.sh" ]]; then
+    "${SCRIPT_DIR}/scripts/check-links.sh" "${SRC_DIR}" || {
+      echo "ERROR: Broken links detected. Fix them before deploying."
+      exit 1
+    }
+  else
+    echo "Warning: Link checker not found, skipping check"
+  fi
+}
+
 deploy() {
   local rsync_opts=("-avz")
 
@@ -101,6 +113,9 @@ main() {
     echo "Error: ${SRC_DIR} not found. Run with --build or build manually."
     exit 1
   fi
+
+  # PLAN-328: Check for broken links before deploying
+  check_links
 
   deploy
 }

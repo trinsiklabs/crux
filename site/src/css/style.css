@@ -261,6 +261,43 @@ td code {
 .blog-index .post-item h2 a { color: var(--fg); }
 .blog-index .post-item h2 a:hover { color: var(--accent); }
 
+/* --- pagination --- */
+
+.pagination {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.pagination ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pagination li {
+  margin: 0;
+}
+
+.pagination a {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.pagination a:hover {
+  background: var(--code-bg);
+  text-decoration: none;
+}
+
+.pagination-info {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 /* --- changelog --- */
 
 .changelog-item { padding: 1.5rem 0; border-bottom: 1px solid var(--border); }
