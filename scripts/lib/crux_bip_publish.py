@@ -129,123 +129,141 @@ def _slugify(text: str) -> str:
     return text
 
 
-# PLAN-330: Outcome-focused hook templates (no plan IDs)
+# PLAN-332: Pain-focused templates (lead with the problem, not the feature)
+# No acronyms, no jargon - speak to regular people
 HOOK_TEMPLATES = [
-    "just shipped: {outcome} ✅",
-    "new in crux: {outcome}",
-    "shipped: {outcome}",
-    "{outcome} — now live in crux",
+    "{pain}",  # Lead with pain, solution comes in tweet 2
 ]
 
 CTA_TEMPLATES = [
-    "what should I ship next?",
-    "follow the journey → @splntrb",
-    "building crux in public. more soon.",
-    "try it: runcrux.io",
+    "try it free → runcrux.io",
+    "runcrux.io",
+    "details: runcrux.io",
 ]
 
 HASHTAGS = "#BuildInPublic #IndieHackers"
 
-# PLAN-331: Human-readable translations (jargon → plain English)
-JARGON_TO_HUMAN = {
-    "bip": "build-in-public",
-    "daemon": "background worker",
-    "hooks": "automatic triggers",
-    "mcp": "AI tool connector",
-    "ingest": "import",
-    "escalation": "priority routing",
-    "coordinated publish": "one-click publishing",
-    "background processor": "auto-poster",
-    "inline review": "quick approval",
-    "repo-aware": "project-aware",
-    "session migration": "context transfer",
-    "high-signal events": "important moments",
+# PLAN-332: Pain-focused feature descriptions
+# Structure: pain statement → solution → (optional) technical detail
+FEATURE_CONTENT = {
+    "bip analytics": {
+        "pain": "sharing your work online shouldn't feel like a second job",
+        "solution": "crux tracks what resonates. no spreadsheets. no manual checking.",
+        "technical": "pulls engagement data from your social accounts automatically",
+    },
+    "bip background processor": {
+        "pain": "you're busy building. who has time to post about it?",
+        "solution": "crux shares your wins automatically while you work",
+        "technical": "watches your git activity and generates updates",
+    },
+    "bip coordinated publish": {
+        "pain": "blog post, tweet, site update — doing all three takes forever",
+        "solution": "one command. everything publishes together.",
+        "technical": "orchestrates blog + social + deploy as one action",
+    },
+    "bip escalation rule": {
+        "pain": "not everything you do is worth posting about",
+        "solution": "crux knows what matters and what doesn't",
+        "technical": "filters activity by impact, skips the noise",
+    },
+    "bip inline review": {
+        "pain": "context switching to approve a tweet breaks your flow",
+        "solution": "approve posts from your terminal. one keystroke.",
+        "technical": "inline review without leaving your editor",
+    },
+    "bip high-signal event hooks": {
+        "pain": "you shipped something big but forgot to tell anyone",
+        "solution": "crux notices when something important happens",
+        "technical": "hooks into your dev tools to catch key moments",
+    },
+    "repo-aware bip hooks": {
+        "pain": "working on multiple projects? updates get mixed together",
+        "solution": "each project stays separate. the right voice for each.",
+        "technical": "detects which project you're in automatically",
+    },
+    "crux ingest-session": {
+        "pain": "you spend 20 minutes teaching claude your codebase. then you open cursor. it knows nothing.",
+        "solution": "crux remembers everything, everywhere. switch tools freely.",
+        "technical": "migrates AI session context between coding tools",
+    },
+    "crux adopt": {
+        "pain": "new project, new setup, same tedious onboarding",
+        "solution": "one command. crux knows your project instantly.",
+        "technical": "analyzes codebase and configures AI context",
+    },
+    "crux switch": {
+        "pain": "stuck with one AI tool because switching means starting over",
+        "solution": "use the best tool for each task. your AI remembers.",
+        "technical": "syncs learned context across all supported tools",
+    },
+    "site content auto-revision": {
+        "pain": "docs get outdated the moment you ship",
+        "solution": "crux updates your docs when features change",
+        "technical": "detects code changes and revises affected pages",
+    },
+    "website page": {
+        "pain": "people can't find what they need in your docs",
+        "solution": "new documentation page — clearer, more complete",
+        "technical": "added missing content to the site",
+    },
+    "test plan": {
+        "pain": "does it actually work? only one way to find out...",
+        "solution": "tested end-to-end. everything works together.",
+        "technical": "verified the full automation pipeline",
+    },
+    "wire bip end-to-end": {
+        "pain": "pieces exist but nothing's connected",
+        "solution": "now it's all wired up. ship → share → done.",
+        "technical": "connected event detection to publish workflow",
+    },
+    "fix deploy": {
+        "pain": "deploys breaking? one more thing to debug",
+        "solution": "fixed. deploys just work now.",
+        "technical": "resolved path issue in deploy script",
+    },
+    "create missing": {
+        "pain": "gaps in the docs frustrate new users",
+        "solution": "filled in the missing pieces",
+        "technical": "added docs, about, architecture pages",
+    },
+    "clawhub": {
+        "pain": "new marketplace launching — should we be there?",
+        "solution": "analyzed the opportunity. findings inside.",
+        "technical": "strategic analysis of Anthropic's ClawHub",
+    },
 }
 
-# PLAN-331: Human-readable outcome translations for specific features
-FEATURE_TO_HUMAN = {
-    "bip analytics": "now I know which posts actually work",
-    "bip background processor": "auto-posts your wins while you work",
-    "bip coordinated publish": "one command publishes everywhere",
-    "bip escalation rule": "crux decides what's worth sharing",
-    "bip inline review": "approve posts without leaving your terminal",
-    "bip high-signal event hooks": "crux notices when something important happens",
-    "repo-aware bip hooks": "each project gets its own voice",
-    "crux ingest-session": "switch AI tools without starting over",
-    "crux adopt": "onboard any project in seconds",
-    "crux switch": "move between AI tools seamlessly",
-    "site content auto-revision": "docs update themselves when features change",
-    "website page": "new docs page live",
-    "test plan": "verified everything works end-to-end",
-    "wire bip end-to-end": "build-in-public now fully automated",
-    "fix deploy": "deploys work smoothly now",
-    "create missing": "filled in the gaps",
-    "clawhub": "exploring new marketplace opportunities",
-}
-
-# PLAN-331: Why it matters context
-WHY_IT_MATTERS = {
-    "analytics": "build in public should feel effortless, not like a second job",
-    "background": "ship updates while you focus on building",
-    "publish": "shipping is hard enough without the marketing busywork",
-    "review": "stay in flow while staying visible",
-    "hooks": "never miss a moment worth sharing",
-    "repo": "your projects deserve individual attention",
-    "session": "your AI's knowledge shouldn't be trapped in one app",
-    "adopt": "new projects should feel familiar immediately",
-    "switch": "use the best tool for each task, keep all context",
-    "auto-revision": "documentation that maintains itself",
-    "website": "better docs = happier developers",
-    "test": "confidence that everything works together",
-    "wire": "automation that actually works",
-    "deploy": "one less thing to worry about",
-    "default": "every improvement compounds",
+# Fallback for features not in the map
+DEFAULT_CONTENT = {
+    "pain": "something was harder than it needed to be",
+    "solution": "now it's easier",
+    "technical": "shipped an improvement",
 }
 
 
-def _translate_to_human(text: str) -> str:
-    """Translate technical jargon to human-readable language."""
-    result = text.lower()
+def _get_feature_content(plan_title: str) -> dict:
+    """Get pain/solution/technical content for a feature.
 
-    # First check for full feature matches
-    for tech, human in FEATURE_TO_HUMAN.items():
-        if tech in result:
-            return human
+    PLAN-332: Returns structured content for human-readable posts.
+    """
+    title_lower = plan_title.lower()
 
-    # Then do word-by-word translation
-    for jargon, plain in JARGON_TO_HUMAN.items():
-        result = result.replace(jargon, plain)
+    # Check for feature matches
+    for feature_key, content in FEATURE_CONTENT.items():
+        if feature_key in title_lower:
+            return content
 
-    return result
-
-
-def _get_why_it_matters(text: str) -> str:
-    """Get the 'why it matters' context for a feature."""
-    text_lower = text.lower()
-
-    for keyword, why in WHY_IT_MATTERS.items():
-        if keyword in text_lower:
-            return why
-
-    return WHY_IT_MATTERS["default"]
+    # Fallback
+    return DEFAULT_CONTENT
 
 
 def _generate_hook(plan_title: str) -> str:
-    """Generate a human-readable, outcome-focused hook from plan title."""
-    # Clean up title - remove "PLAN-XXX:" prefix if present
-    outcome = plan_title
-    if ":" in outcome:
-        outcome = outcome.split(":", 1)[-1].strip()
+    """Generate a pain-focused hook from plan title.
 
-    # PLAN-331: Translate to human-readable language
-    outcome = _translate_to_human(outcome)
-
-    # Truncate if too long
-    if len(outcome) > 80:
-        outcome = outcome[:77] + "..."
-
-    template = random.choice(HOOK_TEMPLATES)
-    return template.format(outcome=outcome)
+    PLAN-332: Lead with the pain, not the feature.
+    """
+    content = _get_feature_content(plan_title)
+    return content["pain"]
 
 
 def _get_optimal_publish_time() -> str | None:
@@ -286,11 +304,12 @@ def schedule_x_thread(
 ) -> dict[str, Any]:
     """Schedule an X thread announcing the blog post.
 
-    PLAN-330: Generates proper 3-tweet thread with:
-    - Outcome-focused hook (no plan ID)
-    - What it does + why it matters
-    - CTA + link + hashtags
-    - Optimal scheduling (Tue-Thu 9-11am EST)
+    PLAN-332: Pain-focused thread structure:
+    - Tweet 1: Pain (the problem regular people feel)
+    - Tweet 2: Solution (how crux fixes it)
+    - Tweet 3: Technical + CTA (details for those who want them)
+
+    No acronyms. No jargon. Speak to regular people.
 
     Returns {"success": True, "id": "..."} or {"success": False, "error": "..."}
     """
@@ -299,20 +318,18 @@ def schedule_x_thread(
 
         client = TypefullyClient(bip_dir=bip_dir)
 
-        # PLAN-331: Generate human-readable content
-        hook = _generate_hook(plan_title)
-        human_explanation = _translate_to_human(plan_title)
-        why = _get_why_it_matters(plan_title)
+        # PLAN-332: Get pain/solution/technical content
+        content = _get_feature_content(plan_title)
         cta = random.choice(CTA_TEMPLATES)
 
-        # Build 3-tweet thread with human-readable language
+        # Build 3-tweet thread: pain → solution → technical
         tweets = [
-            # Tweet 1: Hook (human-readable outcome)
-            hook,
-            # Tweet 2: Simple explanation anyone can understand
-            f"{human_explanation}\n\nno jargon. just works.",
-            # Tweet 3: Why it matters + CTA + link + hashtags
-            f"why: {why}\n\n{blog_url}\n\n{cta}\n\n{HASHTAGS}",
+            # Tweet 1: Lead with the pain
+            content["pain"],
+            # Tweet 2: The solution (simple, no jargon)
+            f"{content['solution']}\n\ncrux makes this automatic.",
+            # Tweet 3: Technical detail (for those who want it) + CTA
+            f"how: {content['technical']}\n\n{blog_url}\n\n{cta}\n\n{HASHTAGS}",
         ]
 
         # Get optimal publish time
