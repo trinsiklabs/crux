@@ -514,11 +514,13 @@ def handle_post_tool_use(
     # Increment BIP interaction counter
     _increment_bip_counter(project_dir, "interactions_since_last_post", 1)
 
-    # PLAN-314: Detect high-signal BIP events
+    # PLAN-314, PLAN-324: Detect high-signal BIP events and log with metadata
     bip_event = _detect_bip_event(tool_name, tool_input, tool_output)
     if bip_event:
         _log_bip_event(project_dir, bip_event)
-        result["bip_event"] = bip_event
+        # Extract event name for result (may be tuple or string)
+        event_name = bip_event[0] if isinstance(bip_event, tuple) else bip_event
+        result["bip_event"] = event_name
 
     # Periodic background processor check
     count = _count_interactions(project_dir)
@@ -565,6 +567,11 @@ def _detect_bip_event(tool_name: str, tool_input: dict, tool_output: str) -> str
 
         # Plan implemented (from database update output)
         if "implemented" in output_lower and "plan-" in output_lower:
+            # Extract plan ID if possible
+            import re
+            match = re.search(r'(PLAN-\d+)', tool_output, re.IGNORECASE)
+            if match:
+                return ("plan_implemented", {"plan_id": match.group(1).upper()})
             return "plan_implemented"
 
     # New MCP tool (writing to MCP-related files)
@@ -576,8 +583,11 @@ def _detect_bip_event(tool_name: str, tool_input: dict, tool_output: str) -> str
     return None
 
 
-def _log_bip_event(project_dir: str, event: str) -> None:
-    """Log a high-signal BIP event. Never raises. PLAN-314."""
+def _log_bip_event(project_dir: str, event: str | tuple) -> None:
+    """Log a high-signal BIP event. Never raises. PLAN-314, PLAN-324.
+
+    Event can be a string or tuple of (event_name, extra_data).
+    """
     try:
         import json
         from datetime import datetime, timezone
@@ -585,10 +595,21 @@ def _log_bip_event(project_dir: str, event: str) -> None:
         if not os.path.isdir(bip_dir):
             return
         events_path = os.path.join(bip_dir, "events.jsonl")
-        entry = {
-            "event": event,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+
+        # Handle tuple (event_name, extra_data) or plain string
+        if isinstance(event, tuple):
+            event_name, extra_data = event
+            entry = {
+                "event": event_name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                **extra_data,
+            }
+        else:
+            entry = {
+                "event": event,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
         with open(events_path, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except Exception:
