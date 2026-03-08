@@ -525,7 +525,7 @@ def run_processors(project_dir: str, home: str, config: ProcessorConfig | None =
                     gather_content,
                     cfg.timeout_seconds,
                     project_dir=project_dir,
-                    bip_dir=bip_dir,
+                    home=home,
                 )
 
                 if content and content.get("draft"):
