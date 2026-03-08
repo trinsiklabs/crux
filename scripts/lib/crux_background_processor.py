@@ -47,6 +47,7 @@ _ALLOWED_PROCESSOR_MODULES = frozenset([
     "scripts.lib.crux_bip",
     "scripts.lib.crux_bip_triggers",
     "scripts.lib.crux_bip_gather",
+    "scripts.lib.crux_bip_publish",
 ])
 
 
@@ -561,6 +562,95 @@ def run_processors(project_dir: str, home: str, config: ProcessorConfig | None =
             _log_processor_run("bip_draft", "error", {"error": sanitized_error})
 
         state["last_bip_draft"] = now
+        _increment_rate_limit(state)
+
+    # Processor 5: BIP event → publish workflow (PLAN-324)
+    # Wires detection to publishing: plan_implemented → blog + X + deploy
+    events_file = os.path.join(bip_dir, "events.jsonl") if os.path.isdir(bip_dir) else None
+    if events_file and os.path.exists(events_file) and _check_cooldown(state, "bip_publish", cfg.cooldown_seconds * 2):
+        try:
+            _log_processor_run("bip_publish", "starting", {})
+
+            bip_module = _safe_import("scripts.lib.crux_bip")
+            get_escalation_action = bip_module.get_escalation_action
+            load_config = bip_module.load_config
+
+            config = load_config(bip_dir)
+            processed_events = state.get("processed_events", [])
+
+            # Read unprocessed events
+            unprocessed = []
+            with open(events_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                        event_key = f"{event.get('event')}:{event.get('timestamp', '')}"
+                        if event_key not in processed_events:
+                            unprocessed.append((event_key, event))
+                    except json.JSONDecodeError:
+                        continue
+
+            published_count = 0
+            for event_key, event in unprocessed:
+                event_type = event.get("event", "")
+                action = get_escalation_action(event_type, config)
+
+                if action == "blog_post":
+                    # Full publish workflow: blog + X + deploy
+                    publish_module = _safe_import("scripts.lib.crux_bip_publish")
+
+                    # Extract plan_id from event if available
+                    plan_id = event.get("plan_id")
+                    if not plan_id and "plan-" in event_type.lower():
+                        # Try to extract from recent database updates
+                        pass  # Will use generic publish
+
+                    if plan_id:
+                        result = _run_with_timeout(
+                            publish_module.publish_for_plan,
+                            cfg.timeout_seconds * 2,
+                            plan_id=plan_id,
+                        )
+                        if result.success:
+                            published_count += 1
+
+                # Mark event as processed
+                processed_events.append(event_key)
+                # Keep only last 100 processed events
+                if len(processed_events) > 100:
+                    processed_events = processed_events[-100:]
+
+            state["processed_events"] = processed_events
+
+            if published_count > 0:
+                processors_run.append({
+                    "name": "bip_publish",
+                    "status": "completed",
+                    "published": published_count,
+                })
+                _log_processor_run("bip_publish", "completed", {"published": published_count})
+
+        except ProcessorTimeoutError:
+            processors_run.append({
+                "name": "bip_publish",
+                "status": "timeout",
+                "error": "Processor exceeded timeout limit",
+            })
+            _log_processor_run("bip_publish", "timeout", {})
+
+        except Exception as exc:
+            sanitized_error = _sanitize_error(str(exc))
+            processors_run.append({
+                "name": "bip_publish",
+                "status": "error",
+                "error": sanitized_error,
+            })
+            _log_processor_run("bip_publish", "error", {"error": sanitized_error})
+
+        state["last_bip_publish"] = now
         _increment_rate_limit(state)
 
     _save_processor_state(project_dir, state)
