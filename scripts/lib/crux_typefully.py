@@ -159,3 +159,28 @@ def list_drafts(client: TypefullyClient) -> list:
 def delete_draft(client: TypefullyClient, draft_id: int) -> dict:
     """Delete a draft by ID."""
     return client._request("DELETE", f"/drafts/{draft_id}")
+
+
+def queue_draft(
+    client: TypefullyClient,
+    content: str,
+    publish_at: str | None = None,
+) -> dict:
+    """Queue a draft for posting. Handles both single tweets and threads.
+
+    If content contains '---' separators, creates a thread.
+    Otherwise creates a single tweet.
+
+    Returns {"success": True, "id": "..."} or {"success": False, "error": "..."}
+    """
+    try:
+        if "---" in content:
+            # Split into thread tweets
+            posts = [p.strip() for p in content.split("---") if p.strip()]
+            result = create_thread(client, posts, publish_at=publish_at)
+        else:
+            result = create_draft(client, content, publish_at=publish_at)
+
+        return {"success": True, "id": result.get("id")}
+    except TypefullyError as e:
+        return {"success": False, "error": str(e)}

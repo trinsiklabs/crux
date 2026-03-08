@@ -5,16 +5,24 @@ PLAN-309: When a plan is implemented, this orchestrates:
 2. Schedule X thread announcing the post
 3. Deploy updated site
 4. All as one atomic operation
+
+PLAN-330: X post improvements
+- 3-tweet threads with outcome-focused hooks
+- Hashtags (#BuildInPublic #IndieHackers)
+- Optimal scheduling (Tue-Thu 9-11am EST)
+- Challenge posts for blocked/failed plans
 """
 
 from __future__ import annotations
 
 import json
 import os
+import random
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 @dataclass
@@ -116,6 +124,70 @@ def _slugify(text: str) -> str:
     return text
 
 
+# PLAN-330: Outcome-focused hook templates (no plan IDs)
+HOOK_TEMPLATES = [
+    "just shipped: {outcome} ✅",
+    "new in crux: {outcome}",
+    "shipped: {outcome}",
+    "{outcome} — now live in crux",
+]
+
+CTA_TEMPLATES = [
+    "what should I ship next?",
+    "follow the journey → @splntrb",
+    "building crux in public. more soon.",
+    "try it: runcrux.io",
+]
+
+HASHTAGS = "#BuildInPublic #IndieHackers"
+
+
+def _generate_hook(plan_title: str) -> str:
+    """Generate an outcome-focused hook from plan title."""
+    # Clean up title - remove "PLAN-XXX:" prefix if present
+    outcome = plan_title
+    if ":" in outcome:
+        outcome = outcome.split(":", 1)[-1].strip()
+    # Lowercase for casual tone
+    outcome = outcome.lower()
+    # Truncate if too long
+    if len(outcome) > 80:
+        outcome = outcome[:77] + "..."
+
+    template = random.choice(HOOK_TEMPLATES)
+    return template.format(outcome=outcome)
+
+
+def _get_optimal_publish_time() -> str | None:
+    """Calculate next optimal posting slot (Tue-Thu 9-11am EST).
+
+    Returns ISO timestamp or None for immediate posting.
+    """
+    est = ZoneInfo("America/New_York")
+    now = datetime.now(est)
+
+    # Target hours: 9-11am EST
+    target_hours = [9, 10, 11]
+    # Target days: Tuesday (1), Wednesday (2), Thursday (3)
+    target_days = [1, 2, 3]
+
+    # Check if we're in a good slot right now
+    if now.weekday() in target_days and now.hour in target_hours:
+        return None  # Post immediately
+
+    # Find next optimal slot
+    candidate = now.replace(hour=10, minute=0, second=0, microsecond=0)
+
+    for days_ahead in range(7):
+        check_date = candidate + timedelta(days=days_ahead)
+        if check_date.weekday() in target_days:
+            if check_date > now:
+                return check_date.isoformat()
+
+    # Fallback: post immediately
+    return None
+
+
 def schedule_x_thread(
     plan_id: str,
     plan_title: str,
@@ -124,28 +196,38 @@ def schedule_x_thread(
 ) -> dict[str, Any]:
     """Schedule an X thread announcing the blog post.
 
-    Returns {"success": True, "thread_id": "..."} or {"success": False, "error": "..."}
+    PLAN-330: Generates proper 3-tweet thread with:
+    - Outcome-focused hook (no plan ID)
+    - What it does + why it matters
+    - CTA + link + hashtags
+    - Optimal scheduling (Tue-Thu 9-11am EST)
+
+    Returns {"success": True, "id": "..."} or {"success": False, "error": "..."}
     """
     try:
-        from scripts.lib.crux_typefully import TypefullyClient, queue_draft
+        from scripts.lib.crux_typefully import TypefullyClient, create_thread
 
         client = TypefullyClient(bip_dir=bip_dir)
 
-        # Thread format: 3 tweets
-        thread_content = f"""just shipped {plan_id}: {plan_title}
+        # Generate hook from title
+        hook = _generate_hook(plan_title)
+        cta = random.choice(CTA_TEMPLATES)
 
-details in the blog post 👇
+        # Build 3-tweet thread
+        tweets = [
+            # Tweet 1: Hook
+            hook,
+            # Tweet 2: What + context
+            f"{plan_title.lower()}\n\nyour AI coding tools just got smarter. details 👇",
+            # Tweet 3: CTA + link + hashtags
+            f"{blog_url}\n\n{cta}\n\n{HASHTAGS}",
+        ]
 
----
+        # Get optimal publish time
+        publish_at = _get_optimal_publish_time()
 
-{blog_url}
-
----
-
-build in public. ship every day. crux makes it automatic."""
-
-        result = queue_draft(client, thread_content)
-        return result
+        result = create_thread(client, tweets, publish_at=publish_at)
+        return {"success": True, "id": result.get("id")}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -272,3 +354,125 @@ def publish_for_plan(plan_id: str, crux_home: str = "~/.crux") -> PublishResult:
         bip_dir=bip_dir,
         deploy_script=deploy_script,
     )
+
+
+# PLAN-330: Challenge posts for blocked/failed plans
+CHALLENGE_HOOK_TEMPLATES = [
+    "hit a wall building crux today 🧱",
+    "learned something the hard way:",
+    "shipping isn't always smooth. here's what happened:",
+    "building in public means sharing the struggles too:",
+]
+
+
+def generate_challenge_post(
+    plan_title: str,
+    challenge: str,
+    learning: str,
+    bip_dir: str,
+) -> dict[str, Any]:
+    """Generate a 'challenge/learning' post for blocked plans.
+
+    These get high engagement because authenticity resonates.
+
+    Returns {"success": True, "id": "..."} or {"success": False, "error": "..."}
+    """
+    try:
+        from scripts.lib.crux_typefully import TypefullyClient, create_thread
+
+        client = TypefullyClient(bip_dir=bip_dir)
+
+        hook = random.choice(CHALLENGE_HOOK_TEMPLATES)
+
+        tweets = [
+            # Tweet 1: Hook
+            hook,
+            # Tweet 2: What happened
+            f"tried to: {plan_title.lower()}\n\nblocked by: {challenge}",
+            # Tweet 3: Learning + CTA
+            f"the lesson: {learning}\n\nbuilding continues.\n\n{HASHTAGS}",
+        ]
+
+        publish_at = _get_optimal_publish_time()
+        result = create_thread(client, tweets, publish_at=publish_at)
+        return {"success": True, "id": result.get("id")}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# PLAN-330: Weekly recap thread
+def generate_weekly_recap(
+    bip_dir: str,
+    crux_home: str = "~/.crux",
+) -> dict[str, Any]:
+    """Generate Friday weekly recap thread.
+
+    Summarizes the week's shipping activity.
+
+    Returns {"success": True, "id": "..."} or {"success": False, "error": "..."}
+    """
+    try:
+        from scripts.lib.crux_typefully import TypefullyClient, create_thread
+
+        client = TypefullyClient(bip_dir=bip_dir)
+
+        # Get plans implemented this week
+        est = ZoneInfo("America/New_York")
+        now = datetime.now(est)
+        week_start = now - timedelta(days=now.weekday())
+        week_start_str = week_start.strftime("%Y-%m-%d")
+
+        result = subprocess.run(
+            [
+                "psql", "-d", "key_onelist", "-tAc",
+                f"""SELECT title FROM entries
+                    WHERE entry_type = 'plan'
+                    AND metadata->>'status' = 'implemented'
+                    AND updated_at >= '{week_start_str}'
+                    ORDER BY updated_at DESC
+                    LIMIT 10"""
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        plans = [p.strip() for p in result.stdout.strip().split("\n") if p.strip()]
+
+        if not plans:
+            return {"success": False, "error": "No plans implemented this week"}
+
+        # Build recap thread
+        plan_count = len(plans)
+
+        # Extract short titles
+        highlights = []
+        for plan in plans[:5]:
+            if ":" in plan:
+                title = plan.split(":", 1)[-1].strip()
+            else:
+                title = plan
+            if len(title) > 50:
+                title = title[:47] + "..."
+            highlights.append(f"✅ {title.lower()}")
+
+        tweets = [
+            # Tweet 1: Hook with count
+            f"week {now.isocalendar()[1]} building crux 🧵\n\nshipped {plan_count} improvements this week:",
+            # Tweet 2: Highlights
+            "\n".join(highlights[:5]),
+            # Tweet 3: CTA
+            f"building AI coding tool portability in public.\n\nfollow along → @splntrb\n\n{HASHTAGS}",
+        ]
+
+        # Schedule for Friday afternoon
+        friday = now + timedelta(days=(4 - now.weekday()) % 7)
+        friday = friday.replace(hour=14, minute=0, second=0, microsecond=0)
+        publish_at = friday.isoformat() if friday > now else None
+
+        result = create_thread(client, tweets, publish_at=publish_at)
+        return {"success": True, "id": result.get("id")}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}

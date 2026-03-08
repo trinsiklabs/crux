@@ -52,6 +52,16 @@ DEFAULT_ESCALATION_RULES = {
         "triggers": ["plan_implemented"],
         "auto_schedule_x_thread": True,
     },
+    # PLAN-330: Challenge posts for blocked/failed plans
+    "plan_blocked": {
+        "action": "challenge_post",
+        "triggers": ["plan_blocked", "plan_failed", "plan_cancelled"],
+    },
+    # PLAN-330: Weekly recap thread
+    "weekly_recap": {
+        "action": "weekly_recap",
+        "triggers": ["friday_eod"],
+    },
     "x_post": {
         "action": "x_post",
         "max_frequency": "1/15min",
