@@ -20,7 +20,8 @@ module.exports = function(eleventyConfig) {
   });
 
   eleventyConfig.addCollection("post", function(collectionApi) {
-    return collectionApi.getFilteredByGlob("src/blog/*.md").sort((a, b) => {
+    // Include both direct .md files and subdirectory index.md files
+    return collectionApi.getFilteredByGlob(["src/blog/*.md", "src/blog/*/index.md"]).sort((a, b) => {
       return b.date - a.date;
     });
   });
