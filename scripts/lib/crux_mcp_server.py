@@ -51,6 +51,7 @@ from scripts.lib.crux_mcp_handlers import (
     handle_bip_generate,
     handle_bip_approve,
     handle_bip_status,
+    handle_bip_get_analytics,
 )
 
 mcp = FastMCP("crux", instructions="Crux AI operating system — knowledge, sessions, modes, and tool switching.")
@@ -476,6 +477,27 @@ def bip_approve(
 def bip_status() -> dict:
     """Get current build-in-public state — counters, cooldown, recent posts."""
     return handle_bip_status(project_dir=_project())
+
+
+@mcp.tool()
+def bip_get_analytics(
+    github_repo: str | None = None,
+    github_token: str | None = None,
+    refresh: bool = False,
+) -> dict:
+    """Get BIP engagement analytics — Typefully stats, GitHub stars/forks, blog traffic.
+
+    Args:
+        github_repo: Optional repo in "owner/repo" format for GitHub stats.
+        github_token: Optional GitHub personal access token for higher rate limits.
+        refresh: If True, fetch fresh data from APIs. Otherwise returns cached analytics.
+    """
+    return handle_bip_get_analytics(
+        project_dir=_project(),
+        github_repo=github_repo,
+        github_token=github_token,
+        refresh=refresh,
+    )
 
 
 async def run():  # pragma: no cover — starts blocking stdio server

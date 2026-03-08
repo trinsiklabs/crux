@@ -44,6 +44,9 @@ _ALLOWED_PROCESSOR_MODULES = frozenset([
     "scripts.lib.generate_digest",
     "scripts.lib.audit_modes",
     "scripts.lib.crux_paths",
+    "scripts.lib.crux_bip",
+    "scripts.lib.crux_bip_triggers",
+    "scripts.lib.crux_bip_gather",
 ])
 
 
@@ -496,6 +499,68 @@ def run_processors(project_dir: str, home: str, config: ProcessorConfig | None =
             _log_processor_run("mode_audit", "error", {"error": sanitized_error})
 
         state["last_mode_audit"] = now
+        _increment_rate_limit(state)
+
+    # Processor 4: BIP draft generation (PLAN-312)
+    bip_dir = os.path.join(project_dir, ".crux", "bip")
+    if os.path.isdir(bip_dir) and _check_cooldown(state, "bip_draft", cfg.cooldown_seconds):
+        try:
+            _log_processor_run("bip_draft", "starting", {})
+
+            bip_module = _safe_import("scripts.lib.crux_bip_triggers")
+            evaluate_triggers = bip_module.evaluate_triggers
+
+            trigger_result = evaluate_triggers(bip_dir)
+
+            if trigger_result.should_trigger:
+                gather_module = _safe_import("scripts.lib.crux_bip_gather")
+                gather_content = gather_module.gather_content
+
+                bip_state_module = _safe_import("scripts.lib.crux_bip")
+                record_history = bip_state_module.record_history
+                reset_counters = bip_state_module.reset_counters
+
+                content = _run_with_timeout(
+                    gather_content,
+                    cfg.timeout_seconds,
+                    project_dir=project_dir,
+                    bip_dir=bip_dir,
+                )
+
+                if content and content.get("draft"):
+                    # Record in history and reset counters
+                    source_key = f"auto:{_now_iso()}"
+                    record_history(bip_dir, source_key, content["draft"][:200])
+                    reset_counters(bip_dir)
+
+                    processors_run.append({
+                        "name": "bip_draft",
+                        "status": "completed",
+                        "reason": trigger_result.reason,
+                        "draft_length": len(content.get("draft", "")),
+                    })
+                    _log_processor_run("bip_draft", "completed", {"reason": trigger_result.reason})
+                # else: no content gathered, skip silently
+            # else: triggers not met, skip silently (expected behavior)
+
+        except ProcessorTimeoutError:
+            processors_run.append({
+                "name": "bip_draft",
+                "status": "timeout",
+                "error": "Processor exceeded timeout limit",
+            })
+            _log_processor_run("bip_draft", "timeout", {})
+
+        except Exception as exc:
+            sanitized_error = _sanitize_error(str(exc))
+            processors_run.append({
+                "name": "bip_draft",
+                "status": "error",
+                "error": sanitized_error,
+            })
+            _log_processor_run("bip_draft", "error", {"error": sanitized_error})
+
+        state["last_bip_draft"] = now
         _increment_rate_limit(state)
 
     _save_processor_state(project_dir, state)

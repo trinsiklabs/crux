@@ -475,12 +475,14 @@ def handle_post_tool_use(
     project_dir: str,
     home: str,
 ) -> dict:
-    """Handle PostToolUse — track files, log interactions, periodic processor check.
+    """Handle PostToolUse — track files, log interactions, BIP events, periodic processor check.
 
     PLAN-166: Validates input lengths and sanitizes logged data.
+    PLAN-314: Added BIP high-signal event detection.
     """
     tool_name = event_data.get("tool_name", "")
     tool_input = event_data.get("tool_input", {})
+    tool_output = event_data.get("tool_output", "")
     crux_dir = os.path.join(project_dir, ".crux")
 
     # PLAN-166: Validate input types and lengths
@@ -512,6 +514,12 @@ def handle_post_tool_use(
     # Increment BIP interaction counter
     _increment_bip_counter(project_dir, "interactions_since_last_post", 1)
 
+    # PLAN-314: Detect high-signal BIP events
+    bip_event = _detect_bip_event(tool_name, tool_input, tool_output)
+    if bip_event:
+        _log_bip_event(project_dir, bip_event)
+        result["bip_event"] = bip_event
+
     # Periodic background processor check
     count = _count_interactions(project_dir)
     if count > 0 and count % _PROCESSOR_CHECK_INTERVAL == 0:
@@ -529,6 +537,60 @@ def _increment_bip_counter(project_dir: str, field_name: str, amount: int = 1) -
         if os.path.isdir(bip_dir):
             from scripts.lib.crux_bip import increment_counter
             increment_counter(bip_dir, field_name, amount)
+    except Exception:
+        pass
+
+
+def _detect_bip_event(tool_name: str, tool_input: dict, tool_output: str) -> str | None:
+    """Detect high-signal BIP events from tool usage. PLAN-314.
+
+    Returns event name or None.
+    """
+    if not isinstance(tool_output, str):
+        tool_output = str(tool_output) if tool_output else ""
+
+    # Test green: pytest/test output with passes and no failures
+    if tool_name == "Bash":
+        output_lower = tool_output.lower()
+        has_passed = any(p in output_lower for p in ["passed", "ok", "✓"])
+        has_failed = any(f in output_lower for f in ["failed", "error", "failure"])
+        if has_passed and not has_failed:
+            # Additional check: looks like test output
+            if any(t in output_lower for t in ["test", "pytest", "spec", "jest"]):
+                return "test_green"
+
+        # PR merge
+        if "merged" in output_lower and "pull" in output_lower:
+            return "pr_merge"
+
+        # Plan implemented (from database update output)
+        if "implemented" in output_lower and "plan-" in output_lower:
+            return "plan_implemented"
+
+    # New MCP tool (writing to MCP-related files)
+    if tool_name in ("Write", "Edit"):
+        file_path = tool_input.get("file_path", "")
+        if "mcp" in file_path.lower() and file_path.endswith(".py"):
+            return "new_mcp_tool"
+
+    return None
+
+
+def _log_bip_event(project_dir: str, event: str) -> None:
+    """Log a high-signal BIP event. Never raises. PLAN-314."""
+    try:
+        import json
+        from datetime import datetime, timezone
+        bip_dir = os.path.join(project_dir, ".crux", "bip")
+        if not os.path.isdir(bip_dir):
+            return
+        events_path = os.path.join(bip_dir, "events.jsonl")
+        entry = {
+            "event": event,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(events_path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
     except Exception:
         pass
 

@@ -38,6 +38,34 @@ DEFAULT_NEVER_WORDS = [
 
 
 @dataclass
+class EscalationRule:
+    action: str  # "blog_post", "x_thread", "x_post"
+    triggers: list[str] = field(default_factory=list)
+    max_frequency: str | None = None  # e.g., "1/15min"
+    cooldown_seconds: int = 0
+    auto_schedule_x_thread: bool = False
+
+
+DEFAULT_ESCALATION_RULES = {
+    "plan_implemented": {
+        "action": "blog_post",
+        "triggers": ["plan_implemented"],
+        "auto_schedule_x_thread": True,
+    },
+    "x_post": {
+        "action": "x_post",
+        "max_frequency": "1/15min",
+        "cooldown_seconds": 900,
+    },
+    "blog_post": {
+        "action": "blog_post",
+        "triggers": ["plan_implemented", "major_feature", "release"],
+        "auto_schedule_x_thread": True,
+    },
+}
+
+
+@dataclass
 class BIPConfig:
     social_set_id: int = 0
     api_key_path: str = ".crux/bip/typefully.key"
@@ -52,6 +80,7 @@ class BIPConfig:
     never_words: list[str] = field(default_factory=lambda: list(DEFAULT_NEVER_WORDS))
     voice_style: str = "all lowercase except proper nouns"
     voice_tone: str = "technical, direct, no hype, builder energy"
+    escalation_rules: dict = field(default_factory=lambda: dict(DEFAULT_ESCALATION_RULES))
 
 
 def save_config(config: BIPConfig, bip_dir: str) -> None:
@@ -177,3 +206,52 @@ def record_history(bip_dir: str, source_key: str, draft_preview: str) -> None:
 def is_in_history(bip_dir: str, source_key: str) -> bool:
     history = load_history(bip_dir)
     return any(h.get("source_key") == source_key for h in history)
+
+
+# ---------------------------------------------------------------------------
+# Escalation Rules
+# ---------------------------------------------------------------------------
+
+def get_escalation_action(event_type: str, config: BIPConfig) -> str | None:
+    """Determine what action an event should escalate to.
+
+    Returns:
+        "blog_post" - Event warrants a full blog post
+        "x_thread" - Event warrants an X thread
+        "x_post" - Event warrants a single X post
+        None - Event doesn't trigger escalation
+    """
+    rules = config.escalation_rules
+
+    # Check for direct event mapping
+    if event_type in rules:
+        return rules[event_type].get("action")
+
+    # Check for trigger matching
+    for rule_name, rule in rules.items():
+        triggers = rule.get("triggers", [])
+        if event_type in triggers:
+            return rule.get("action")
+
+    # Default: high-signal events get x_post
+    if event_type in config.high_signal_events:
+        return "x_post"
+
+    return None
+
+
+def should_escalate_to_blog(event_type: str, config: BIPConfig) -> bool:
+    """Check if event should generate a blog post (highest escalation)."""
+    action = get_escalation_action(event_type, config)
+    return action == "blog_post"
+
+
+def get_escalation_cooldown(action: str, config: BIPConfig) -> int:
+    """Get cooldown in seconds for an escalation action."""
+    rules = config.escalation_rules
+    if action in rules:
+        return rules[action].get("cooldown_seconds", 0)
+    # Default to config cooldown for x_post
+    if action == "x_post":
+        return config.cooldown_minutes * 60
+    return 0

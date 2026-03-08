@@ -1013,3 +1013,44 @@ def handle_bip_status(project_dir: str) -> dict:
             for h in history[-5:]
         ],
     }
+
+
+def handle_bip_get_analytics(
+    project_dir: str,
+    github_repo: str | None = None,
+    github_token: str | None = None,
+    refresh: bool = False,
+) -> dict:
+    """Get BIP analytics — engagement data from Typefully, GitHub, blog.
+
+    Args:
+        project_dir: Project directory path.
+        github_repo: Optional repo in "owner/repo" format for GitHub stats.
+        github_token: Optional GitHub token for higher rate limits.
+        refresh: If True, fetch fresh data from APIs. Otherwise returns cached.
+
+    Returns:
+        Analytics summary with Typefully, GitHub, and blog stats.
+    """
+    import os
+    from scripts.lib.crux_bip_analytics import (
+        fetch_all_analytics,
+        get_analytics_summary,
+    )
+
+    crux_dir = os.path.join(project_dir, ".crux")
+    bip_dir = os.path.join(crux_dir, "bip")
+
+    if refresh:
+        try:
+            fetch_all_analytics(
+                bip_dir=bip_dir,
+                github_repo=github_repo,
+                github_token=github_token,
+            )
+        except Exception as e:
+            logger.error(f"Error refreshing analytics: {e}")
+            return {"status": "error", "error": "Failed to refresh analytics"}
+
+    summary = get_analytics_summary(bip_dir)
+    return {"status": "ok", **summary}

@@ -20,6 +20,9 @@ from scripts.lib.crux_bip import (
     reset_counters,
     increment_counter,
     check_cooldown,
+    get_escalation_action,
+    should_escalate_to_blog,
+    get_escalation_cooldown,
 )
 
 
@@ -231,3 +234,47 @@ class TestHistory:
         keys = [h["source_key"] for h in history]
         assert "git:good" in keys
         assert "git:also_good" in keys
+
+
+# ---------------------------------------------------------------------------
+# Escalation Rules
+# ---------------------------------------------------------------------------
+
+class TestEscalationRules:
+    def test_plan_implemented_escalates_to_blog(self):
+        cfg = BIPConfig()
+        action = get_escalation_action("plan_implemented", cfg)
+        assert action == "blog_post"
+
+    def test_should_escalate_to_blog_for_plan(self):
+        cfg = BIPConfig()
+        assert should_escalate_to_blog("plan_implemented", cfg) is True
+        assert should_escalate_to_blog("test_green", cfg) is False
+
+    def test_high_signal_event_escalates_to_x_post(self):
+        cfg = BIPConfig()
+        action = get_escalation_action("test_green", cfg)
+        assert action == "x_post"
+
+    def test_unknown_event_returns_none(self):
+        cfg = BIPConfig()
+        action = get_escalation_action("random_event", cfg)
+        assert action is None
+
+    def test_escalation_cooldown_for_x_post(self):
+        cfg = BIPConfig(cooldown_minutes=15)
+        cooldown = get_escalation_cooldown("x_post", cfg)
+        assert cooldown == 900  # 15 min * 60 sec
+
+    def test_custom_escalation_rules(self):
+        cfg = BIPConfig(escalation_rules={
+            "custom_event": {"action": "x_thread"},
+        })
+        action = get_escalation_action("custom_event", cfg)
+        assert action == "x_thread"
+
+    def test_default_escalation_rules_present(self):
+        cfg = BIPConfig()
+        assert "plan_implemented" in cfg.escalation_rules
+        assert "x_post" in cfg.escalation_rules
+        assert "blog_post" in cfg.escalation_rules

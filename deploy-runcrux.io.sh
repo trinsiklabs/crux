@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER="runcrux.io"
 USER="runcrux.io"
 DEST_DIR="/home/runcrux.io/public_html/"
-SRC_DIR="site/_site"
+SRC_DIR="${SCRIPT_DIR}/site/_site"
 
 BUILD=0
 DRY_RUN=0
@@ -79,7 +79,6 @@ deploy() {
   fi
 
   rsync_opts+=(
-    "${rsync_opts[@]}"
     --exclude ".git/"
     --exclude "*.map"
   )
