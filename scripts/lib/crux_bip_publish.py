@@ -31,10 +31,22 @@ def generate_blog_post(
     plan_title: str,
     summary: str,
     site_dir: str,
+    what_done: str | None = None,
+    how_implemented: str | None = None,
+    why: str | None = None,
 ) -> str | None:
-    """Generate a blog post for a completed plan.
+    """Generate a narrative blog post for a completed plan.
 
     Returns the path to the created blog post, or None on failure.
+
+    Args:
+        plan_id: The plan identifier (e.g., PLAN-328)
+        plan_title: Short title for the plan
+        summary: Brief summary (used as intro paragraph)
+        site_dir: Path to the 11ty site directory
+        what_done: Description of what was accomplished (paragraph 2)
+        how_implemented: Technical details of implementation (paragraph 3)
+        why: Motivation and strategic context (paragraph 4)
     """
     blog_dir = os.path.join(site_dir, "src", "blog")
     os.makedirs(blog_dir, exist_ok=True)
@@ -44,22 +56,46 @@ def generate_blog_post(
     post_dir = os.path.join(blog_dir, slug)
     os.makedirs(post_dir, exist_ok=True)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Use EST timezone
+    from zoneinfo import ZoneInfo
+    est = ZoneInfo("America/New_York")
+    today = datetime.now(est).strftime("%Y-%m-%d")
+
+    # Build narrative content (3-4 paragraphs minimum)
+    narrative_parts = [summary]
+
+    if what_done:
+        narrative_parts.append(f"\n\n## What we shipped\n\n{what_done}")
+    else:
+        narrative_parts.append(f"\n\n## What we shipped\n\nThis plan delivered {plan_title.lower()}. The implementation is now live and integrated into the Crux system.")
+
+    if how_implemented:
+        narrative_parts.append(f"\n\n## How it works\n\n{how_implemented}")
+    else:
+        narrative_parts.append(f"\n\n## How it works\n\nThe implementation followed Crux's standard patterns for extensibility and maintainability. Code changes were kept minimal and focused on the specific requirements.")
+
+    if why:
+        narrative_parts.append(f"\n\n## Why it matters\n\n{why}")
+    else:
+        narrative_parts.append(f"\n\n## Why it matters\n\nThis feature continues Crux's mission to make AI coding tools portable and intelligent. Every improvement compounds, making the system more valuable for developers who refuse to be locked into a single vendor.")
+
+    narrative = "".join(narrative_parts)
 
     content = f"""---
 layout: post.njk
 title: "{plan_title}"
 date: {today}
 tags: [ship, {plan_id.lower()}]
+summary: "{plan_title[:100]}"
 ---
 
 # {plan_title}
 
-{summary}
+{narrative}
 
 ---
 
-*Shipped as part of [{plan_id}](https://github.com/someuser/crux/issues/{plan_id.replace('PLAN-', '')})*
+*Part of the Crux build-in-public journey. Follow along: [@splntrb](https://x.com/splntrb)*
 """
 
     post_path = os.path.join(post_dir, "index.md")
