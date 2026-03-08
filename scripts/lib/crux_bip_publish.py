@@ -11,6 +11,11 @@ PLAN-330: X post improvements
 - Hashtags (#BuildInPublic #IndieHackers)
 - Optimal scheduling (Tue-Thu 9-11am EST)
 - Challenge posts for blocked/failed plans
+
+PLAN-331: Human-readable posts + why it matters
+- Translate jargon to plain English
+- Add "why it matters" context
+- Make posts understandable to non-technical people
 """
 
 from __future__ import annotations
@@ -141,15 +146,100 @@ CTA_TEMPLATES = [
 
 HASHTAGS = "#BuildInPublic #IndieHackers"
 
+# PLAN-331: Human-readable translations (jargon → plain English)
+JARGON_TO_HUMAN = {
+    "bip": "build-in-public",
+    "daemon": "background worker",
+    "hooks": "automatic triggers",
+    "mcp": "AI tool connector",
+    "ingest": "import",
+    "escalation": "priority routing",
+    "coordinated publish": "one-click publishing",
+    "background processor": "auto-poster",
+    "inline review": "quick approval",
+    "repo-aware": "project-aware",
+    "session migration": "context transfer",
+    "high-signal events": "important moments",
+}
+
+# PLAN-331: Human-readable outcome translations for specific features
+FEATURE_TO_HUMAN = {
+    "bip analytics": "now I know which posts actually work",
+    "bip background processor": "auto-posts your wins while you work",
+    "bip coordinated publish": "one command publishes everywhere",
+    "bip escalation rule": "crux decides what's worth sharing",
+    "bip inline review": "approve posts without leaving your terminal",
+    "bip high-signal event hooks": "crux notices when something important happens",
+    "repo-aware bip hooks": "each project gets its own voice",
+    "crux ingest-session": "switch AI tools without starting over",
+    "crux adopt": "onboard any project in seconds",
+    "crux switch": "move between AI tools seamlessly",
+    "site content auto-revision": "docs update themselves when features change",
+    "website page": "new docs page live",
+    "test plan": "verified everything works end-to-end",
+    "wire bip end-to-end": "build-in-public now fully automated",
+    "fix deploy": "deploys work smoothly now",
+    "create missing": "filled in the gaps",
+    "clawhub": "exploring new marketplace opportunities",
+}
+
+# PLAN-331: Why it matters context
+WHY_IT_MATTERS = {
+    "analytics": "build in public should feel effortless, not like a second job",
+    "background": "ship updates while you focus on building",
+    "publish": "shipping is hard enough without the marketing busywork",
+    "review": "stay in flow while staying visible",
+    "hooks": "never miss a moment worth sharing",
+    "repo": "your projects deserve individual attention",
+    "session": "your AI's knowledge shouldn't be trapped in one app",
+    "adopt": "new projects should feel familiar immediately",
+    "switch": "use the best tool for each task, keep all context",
+    "auto-revision": "documentation that maintains itself",
+    "website": "better docs = happier developers",
+    "test": "confidence that everything works together",
+    "wire": "automation that actually works",
+    "deploy": "one less thing to worry about",
+    "default": "every improvement compounds",
+}
+
+
+def _translate_to_human(text: str) -> str:
+    """Translate technical jargon to human-readable language."""
+    result = text.lower()
+
+    # First check for full feature matches
+    for tech, human in FEATURE_TO_HUMAN.items():
+        if tech in result:
+            return human
+
+    # Then do word-by-word translation
+    for jargon, plain in JARGON_TO_HUMAN.items():
+        result = result.replace(jargon, plain)
+
+    return result
+
+
+def _get_why_it_matters(text: str) -> str:
+    """Get the 'why it matters' context for a feature."""
+    text_lower = text.lower()
+
+    for keyword, why in WHY_IT_MATTERS.items():
+        if keyword in text_lower:
+            return why
+
+    return WHY_IT_MATTERS["default"]
+
 
 def _generate_hook(plan_title: str) -> str:
-    """Generate an outcome-focused hook from plan title."""
+    """Generate a human-readable, outcome-focused hook from plan title."""
     # Clean up title - remove "PLAN-XXX:" prefix if present
     outcome = plan_title
     if ":" in outcome:
         outcome = outcome.split(":", 1)[-1].strip()
-    # Lowercase for casual tone
-    outcome = outcome.lower()
+
+    # PLAN-331: Translate to human-readable language
+    outcome = _translate_to_human(outcome)
+
     # Truncate if too long
     if len(outcome) > 80:
         outcome = outcome[:77] + "..."
@@ -209,18 +299,20 @@ def schedule_x_thread(
 
         client = TypefullyClient(bip_dir=bip_dir)
 
-        # Generate hook from title
+        # PLAN-331: Generate human-readable content
         hook = _generate_hook(plan_title)
+        human_explanation = _translate_to_human(plan_title)
+        why = _get_why_it_matters(plan_title)
         cta = random.choice(CTA_TEMPLATES)
 
-        # Build 3-tweet thread
+        # Build 3-tweet thread with human-readable language
         tweets = [
-            # Tweet 1: Hook
+            # Tweet 1: Hook (human-readable outcome)
             hook,
-            # Tweet 2: What + context
-            f"{plan_title.lower()}\n\nyour AI coding tools just got smarter. details 👇",
-            # Tweet 3: CTA + link + hashtags
-            f"{blog_url}\n\n{cta}\n\n{HASHTAGS}",
+            # Tweet 2: Simple explanation anyone can understand
+            f"{human_explanation}\n\nno jargon. just works.",
+            # Tweet 3: Why it matters + CTA + link + hashtags
+            f"why: {why}\n\n{blog_url}\n\n{cta}\n\n{HASHTAGS}",
         ]
 
         # Get optimal publish time
