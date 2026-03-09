@@ -5,50 +5,54 @@
 ```
   CLAUDE.md
   CONTRIBUTING.md
+  DEPLOYMENT.md
+  KEY_OWNERSHIP.md
   LICENSE
   README.md
+  config.json
   crux-claude-code-analysis.md
   crux-ecosystem-analysis.md
+  deploy-runcrux.io.sh
   package-lock.json
   package.json
   pyproject.toml
+  requirements.txt
   setup.sh
-  tools/
-    list_scripts.js
-    lookup_knowledge.js
-    manage_models.js
-    project_context.js
-    promote_script.js
-    run_script.js
-    suggest_handoff.js
-  modes/
-    _template.md
-    ai-infra.md
-    analyst.md
-    build-ex.md
-    build-py.md
-    debug.md
-    docker.md
-    explain.md
-    infra-architect.md
-    legal.md
-    mac.md
-    plan.md
-    psych.md
-    review.md
-    strategist.md
-    writer.md
-  bin/
-    crux
-  plugins/
-    compaction-hook.js
-    correction-detector.js
-    session-logger.js
-    think-router.js
-    token-budget.js
-    tool-enforcer.js
+  crux-roadmap/
+    CRUX-DOCUMENT-INDEX.md
+    crux-expanded-architecture-spec.md
+    crux-gap-report.md
+    crux-github-action-plan.md
+    crux-market-analysis.md
+    crux-marketing-plan-addendum-vibe-coding-analysis.md
+    crux-marketing-plan.md
+    crux-openclaw-autonomous-business-guide.md
+    crux-openclaw-integration.md
+    crux-replit-competitor-plan.md
+    crux-shipper-mashup.md
+    crux-suite-argument.md
+    crux-vibe-mac-premium-tier.md
+    crux-vibe-platform-spec.md
+    crux-vibecoding-analysis.md
+    crux-website-plan.md
+    mobile-frontend-plan.md
+    opencode-per-mode-model-routing.md
+  commands/
+    archive.md
+    configure-api.md
+    digest.md
+    init-project.md
+    log.md
+    promote.md
+    propose-mode.md
+    restore.md
+    review-community.md
+    review-knowledge.md
+    scripts.md
+    stats.md
   tests/
     commands.bats
+    crux_cli.bats
     modes.bats
     plugins.test.js
     plugins_full.test.js
@@ -59,24 +63,150 @@
     setup_syntax.bats
     test_audit_modes.py
     test_crux_adopt.py
-    test_crux_init.py
-    test_crux_paths.py
-    test_crux_session.py
-    test_crux_switch.py
-    test_crux_sync.py
-    test_extract_corrections.py
-    test_generate_digest.py
-    test_mcp_server.py
-    test_mcp_server_registration.py
-  crux-specs/
-    DEVELOPMENT-PLAN.md
-    specs/
-      continuous-learning.md
-      custom-tools.md
-      library-scripts.md
-      mode-audit.md
-      model-management.md
-      plugins.md
+    test_crux_audit_backend.py
+    test_crux_background_processor.py
+    test_crux_bip.py
+    test_crux_bip_gather.py
+    test_crux_bip_mcp.py
+    test_crux_bip_triggers.py
+    test_crux_cross_domain.py
+    test_crux_cross_project.py
+  site/
+    package-lock.json
+    package.json
+    src/
+      404.md
+      feed.njk
+      index.njk
+      changelog/
+        index.njk
+      blog/
+        day-1-starting-crux.md
+        index.njk
+        mcp-server-is-product.md
+        wiring-crux-adopt.md
+      _includes/
+        base.njk
+        post.njk
+      modes/
+        index.njk
+      css/
+        style.css
+      _data/
+        site.json
+    _site/
+      404.html
+      feed.xml
+      index.html
+      changelog/
+        index.html
+      blog/
+        index.html
+      modes/
+        index.html
+      css/
+        style.css
+  lib/
+    plugin-shim.js
+  modes/
+    TEMPLATE.txt
+    ai-infra.md
+    analyst.md
+    build-ex.md
+    build-in-public.md
+    build-py.md
+    debug.md
+    design-accessibility.md
+    design-responsive.md
+    design-review.md
+    design-system.md
+    design-ui.md
+    docker.md
+    explain.md
+    infra-architect.md
+    legal.md
+    mac.md
+    marketing.md
+    plan.md
+    psych.md
+  analytics/
+    digests/
+  adapters/
+  scripts/
+    __init__.py
+    lib/
+      __init__.py
+      audit_modes.py
+      crux_adopt.py
+      crux_audit_backend.py
+      crux_background_processor.py
+      crux_bip.py
+      crux_bip_gather.py
+      crux_bip_triggers.py
+      crux_cross_domain.py
+      crux_cross_project.py
+      crux_design_handoff.py
+      crux_design_validation.py
+      crux_figma.py
+      crux_hook_runner.py
+      crux_hooks.py
+      crux_init.py
+      crux_knowledge_categories.py
+      crux_llm_audit.py
+      crux_mcp_handlers.py
+      crux_mcp_server.py
+    templates/
+      script-template.sh
+      transaction-template.sh
+  tools/
+    list_scripts.js
+    lookup_knowledge.js
+    manage_models.js
+    marketing_generate.js
+    marketing_update_state.js
+    project_context.js
+    promote_script.js
+    run_script.js
+    suggest_handoff.js
+  sessions/
+    state.json
+  models/
+  knowledge/
+    _template.md
+    frontend-design-principles.md
+    git-hygiene.md
+    when-to-ask.md
+    shared/
+    by-mode/
+      explain/
+      build-ex/
+      strategist/
+      infra-architect/
+      debug/
+      ai-infra/
+      review/
+      psych/
+      legal/
+      plan/
+      build-py/
+      analyst/
+      mac/
+      docker/
+      writer/
+  corrections/
+  skills/
+    script-builder/
+      SKILL.md
+    session-logger/
+      SKILL.md
+  plugins/
+    compaction-hook.js
+    correction-detector.js
+    crux-bridge.js
+    session-logger.js
+    think-router.js
+    token-budget.js
+    tool-enforcer.js
   docs/
     architecture.md
     continuous-learning.md
@@ -86,72 +216,22 @@
     scripts-first.md
     setup-reference.md
     tool-hierarchy.md
-  crux-roadmap/
-    CRUX-DOCUMENT-INDEX.md
-    crux-expanded-architecture-spec.md
-    crux-market-analysis.md
-    crux-marketing-plan.md
-    crux-openclaw-integration.md
-    crux-replit-competitor-plan.md
-    crux-shipper-mashup.md
-    crux-suite-argument.md
-    crux-vibe-mac-premium-tier.md
-    crux-vibe-platform-spec.md
-    crux-vibecoding-analysis.md
-  knowledge/
-    _template.md
-    build-ex/
-    build-py/
-    shared/
-  examples/
-  scripts/
-    __init__.py
-    lib/
-      __init__.py
-      audit_modes.py
-      crux_adopt.py
-      crux_init.py
-      crux_mcp_handlers.py
-      crux_mcp_server.py
-      crux_paths.py
-      crux_session.py
-      crux_switch.py
-      crux_sync.py
-      extract_corrections.py
-      generate_digest.py
-      model_auto_evaluate.py
-      model_registry_update.py
-      preflight_validator.py
-      promote_knowledge.py
-      update_project_context.py
-    templates/
-      script-template.sh
-      transaction-template.sh
-    analytics/
-  lib/
-    plugin-shim.js
+  bin/
+    crux
   templates/
     AGENTS.md
     PROJECT.md
     opencode.json
-  commands/
-    archive.md
-    configure-api.md
-    digest.md
-    init-project.md
-    log.md
-    promote.md
-    propose-mode.md
-    review-community.md
-    review-knowledge.md
-    scripts.md
-    stats.md
-  skills/
-    session-logger/
-      SKILL.md
-    script-builder/
-      SKILL.md
-  mcp-servers/
+  crux-specs/
+    DEVELOPMENT-PLAN.md
+    website-marketing-status-report.md
+    specs/
+      continuous-learning.md
+      custom-tools.md
+      library-scripts.md
+      mode-audit.md
+      model-management.md
+      plugins.md
 ```
 
 ## Tech Stack

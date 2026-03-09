@@ -1,6 +1,6 @@
 ---
 title: "wiring crux adopt for mid-session onboarding"
-date: 2026-03-05
+date: 2026-03-05T12:00:00
 tags: [shipping, architecture, mcp]
 summary: "two-phase onboarding so you can start using crux on an existing project without losing context"
 ---

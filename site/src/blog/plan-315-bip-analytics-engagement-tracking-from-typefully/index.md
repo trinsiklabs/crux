@@ -1,25 +1,66 @@
 ---
 layout: post.njk
-title: "BIP Analytics"
+title: "BIP analytics: engagement tracking from Typefully API, blog traffic, star/fork counts"
 date: 2026-03-08
 tags: [ship, plan-315]
+summary: "BIP analytics: engagement tracking from Typefully API, blog traffic, star/fork counts"
 ---
 
-# BIP Analytics
+# BIP analytics: engagement tracking from Typefully API, blog traffic, star/fork counts
 
-You cannot improve what you do not measure. Today we shipped BIP analytics that tracks engagement across all publishing channels in one unified view.
+You shipped something cool. You tweeted about it. Then... nothing? Or maybe it went viral, but you have no idea why. Building in public should help you understand what resonates with your audience, but instead it feels like shouting into the void.
 
-## What We Shipped
+## The problem
+The core problem is feedback loops. When you ship code, you get immediate feedback: tests pass or fail, users report bugs, performance dashboards show improvements. But when you share your work publicly, the feedback is scattered across platforms and easy to miss.
 
-BIP analytics aggregates engagement data from Typefully (X metrics), blog traffic (page views, time on page), and GitHub signals (stars, forks, issues from blog referrals). The data flows into a lightweight dashboard that shows which content resonates, which topics drive adoption, and where attention is coming from. All metrics are tied back to the original shipping event that generated the content.
+Twitter impressions are in one place. Blog traffic is in another. Comments and replies are spread across multiple apps. By the time you've checked everything, your context-switching has killed your productivity.
 
-## How It Works
+The existing solutions—social media management tools, analytics dashboards—require you to leave your development environment. They're built for marketers, not developers. What we needed was analytics that fit into the developer workflow.
 
-The analytics system pulls data from three APIs on a configurable schedule. Typefully provides impressions, engagements, and link clicks for X threads. Our Cloudflare analytics provide blog traffic with referrer breakdown. GitHub API provides star/fork events with timestamps we can correlate to publishing events. The aggregator normalizes these into a common schema and stores time-series data locally. A simple terminal UI renders sparklines and top performers on demand.
+## Our approach
+We built BIP Analytics to pull engagement data directly into Crux. No browser tabs, no dashboard logins. Just the numbers you need, where you need them.
 
-## Why It Matters
+The key insight was that developers don't need fancy charts. They need signals: what worked, what didn't, and what to try differently. So we focused on surfacing actionable insights rather than raw metrics.
 
-Building in public without feedback is shouting into the void. Analytics close the loop, showing what kinds of updates drive engagement and adoption. Over time, patterns emerge: maybe architecture posts outperform bug fix announcements, or threads with code snippets get more clicks. This data informs content strategy without requiring dedicated marketing effort. The analytics are a byproduct of the publishing system, not a separate initiative.
+We also made it async. Analytics sync in the background, so checking engagement never blocks your workflow.
+
+## How it works
+BIP Analytics uses a pull-based architecture. Here's how it works:
+
+**OAuth2 Credentials** (a secure way to let apps access your accounts without sharing passwords): When you connect your social accounts, Crux stores encrypted OAuth tokens. These tokens let us fetch your engagement data without ever seeing your password.
+
+**Background Sync**: A daemon process polls each platform's API at configurable intervals. We default to every 15 minutes—frequent enough to be useful, infrequent enough to respect rate limits (the number of API requests each platform allows per time period).
+
+**The Analytics Store**: Engagement data lands in a local SQLite database. We chose SQLite because it's fast, requires no setup, and works offline. The schema tracks impressions, engagements, and link clicks per post, with timestamps for trend analysis.
+
+**The CLI Interface**: Running `crux bip analytics` shows your recent posts ranked by engagement. We calculate a simple "resonance score" (engagements divided by impressions) to highlight what's actually connecting with your audience, not just what got lucky with the algorithm.
+
+```bash
+$ crux bip analytics --last 7d
+Post                          Impressions  Engagements  Resonance
+"Context portability..."      2,341        187          7.9%
+"Shipped PLAN-301..."         892          23           2.5%
+```
+
+## What this enables
+With BIP Analytics, you can finally learn from your public building. You'll see which technical topics resonate with your audience, which framing works best, and when your followers are most active.
+
+Over time, this compounds. You get better at communicating your work. Your audience grows. More people use your product. And you never had to leave your terminal to make it happen.
+
+## Try it
+Connect your first social account with:
+
+```bash
+crux bip connect twitter
+```
+
+Then check your analytics:
+
+```bash
+crux bip analytics
+```
+
+Full documentation at [runcrux.io/docs/bip-analytics](https://runcrux.io/docs/bip-analytics)
 
 ---
 

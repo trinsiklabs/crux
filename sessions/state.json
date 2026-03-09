@@ -1,0 +1,23 @@
+{
+  "active_mode": "build-py",
+  "active_tool": "claude-code",
+  "working_on": "PLAN-166 Crux Integration - Phase 1 complete, MCP ready",
+  "key_decisions": [
+    "Crux adopted with 60 security fixes",
+    "Phase 1: read-only MCP tools only",
+    "Onelist remains authoritative memory",
+    "Crux venv created at ~/.crux/.venv"
+  ],
+  "pending": [
+    "Restart Claude Code to load MCP server",
+    "Test Crux MCP tools",
+    "Phase 2: enable correction detection",
+    "Phase 3: knowledge integration"
+  ],
+  "completed": [
+    "Security audit (60 vulnerabilities fixed)",
+    "MCP package installed in venv",
+    "PyYAML dependency added",
+    "requirements.txt committed"
+  ]
+}

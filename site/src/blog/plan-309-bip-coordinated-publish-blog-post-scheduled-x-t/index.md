@@ -1,25 +1,61 @@
 ---
 layout: post.njk
-title: "BIP Coordinated Publish"
+title: "BIP coordinated publish: blog post + scheduled X thread + site deploy as atomic workflow"
 date: 2026-03-08
 tags: [ship, plan-309]
+summary: "BIP coordinated publish: blog post + scheduled X thread + site deploy as atomic workflow"
 ---
 
-# BIP Coordinated Publish
+# BIP coordinated publish: blog post + scheduled X thread + site deploy as atomic workflow
 
-Publishing across multiple channels manually is error-prone and time-consuming. Today we shipped atomic coordinated publishing that ensures blog posts, X threads, and site deploys happen together or not at all.
+You've just finished implementing a feature. Now comes the part nobody talks about: the publish grind. Write a blog post. Craft a tweet thread. Deploy the site. Update the changelog. Each step is easy. Together, they're a 30-minute tax on every ship.
 
-## What We Shipped
+## The problem
+The real cost isn't the 30 minutes. It's the context switching. You're in flow, riding the high of shipping something new. Then you have to switch gears completely—from builder to marketer to ops engineer and back.
 
-BIP coordinated publish combines three previously separate actions into a single atomic workflow: generating and committing a blog post, scheduling an X thread via Typefully, and triggering a site deploy. When you approve a BIP draft, all three happen in sequence with rollback if any step fails. No more orphaned tweets pointing to 404 blog posts.
+Most developers handle this one of two ways. Either they publish immediately (and the quality suffers), or they batch it (and forget half of what they shipped). Neither is great.
 
-## How It Works
+What makes this hard is the coordination. The blog post needs to exist before you can tweet the link. The site needs to deploy before the link works. The timing matters. Get it wrong and you're sharing broken links.
 
-The coordinated publish workflow uses a transaction-style approach. First, the blog post is committed to the site repo. Then the X thread is scheduled via the Typefully API with a delay matching our deploy time. Finally, the deploy script is triggered. If the deploy fails, we cancel the scheduled tweet and revert the blog commit. Success is all-or-nothing. The implementation leverages our existing event system to chain these operations with proper error boundaries.
+## Our approach
+We built Coordinated Publish to treat publishing as a single atomic operation. One command. Everything happens in the right order. If any step fails, you know immediately.
 
-## Why It Matters
+The key insight was that most shipping content follows a pattern. The plan ID tells us what shipped. The plan metadata tells us what it does. We can generate 80% of the content automatically and let you customize the rest.
 
-Building in public means consistent presence across channels. When a follower sees a tweet about a new feature and clicks through, they need to land on a live blog post. Coordinated publish eliminates the coordination overhead that makes multi-channel publishing feel like a chore. It turns what was a five-minute manual process into a single keystroke approval, making consistent publishing sustainable even during intense shipping sprints.
+We also made failure recoverable. If the deploy fails, the blog post is still saved locally. Fix the deploy, run again, and Crux picks up where it left off.
+
+## How it works
+Coordinated Publish orchestrates three subsystems:
+
+**Blog Generation**: The `generate_blog_post()` function pulls plan metadata from the database and generates a Markdown file. We use 11ty (a static site generator—a tool that turns Markdown into web pages) because it's fast and the output is just files. The generated post includes frontmatter (metadata at the top of the file that tells 11ty how to render it) with title, date, and tags.
+
+```python
+def generate_blog_post(plan_id, plan_title, summary, site_dir):
+    # Creates src/blog/{slug}/index.md
+    # With 6-section narrative structure
+```
+
+**Site Deployment**: After generating the blog post, we run `npm run build` to regenerate the static site, then execute the deploy script. This ensures the new post is live before we share it.
+
+**Social Scheduling**: Finally, we create an X thread using the Typefully API. The thread is scheduled for optimal engagement times (Tue-Thu, 9-11am EST based on indie hacker audience research). If Typefully isn't configured, we save the thread content locally so you can post manually.
+
+**Error Handling**: Each step returns a success/failure status. The `PublishResult` dataclass tracks what succeeded, what failed, and collects error messages. This makes debugging straightforward—you know exactly where things went wrong.
+
+## What this enables
+With Coordinated Publish, shipping and sharing become one action. You finish a feature, run one command, and the world knows about it.
+
+More importantly, you build a consistent publishing habit. When sharing is easy, you do it more. When you do it more, your audience grows. The compound effects of building in public actually start to compound.
+
+## Try it
+After implementing a plan:
+
+```bash
+crux bip publish PLAN-XXX
+```
+
+This generates the blog post, deploys your site, and schedules the announcement. Preview before publishing with `--dry-run`.
+
+Documentation: [runcrux.io/docs/bip-publish](https://runcrux.io/docs/bip-publish)
 
 ---
 

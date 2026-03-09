@@ -30,7 +30,7 @@ crux/
 │   └── manage_models.js        # Model registry CRUD operations
 ├── commands/                   # 11 custom command definitions (MD)
 ├── scripts/
-│   ├── lib/                    # 8 Python modules (stdlib only)
+│   ├── lib/                    # Python modules (stdlib + mcp)
 │   │   ├── preflight_validator.py
 │   │   ├── extract_corrections.py
 │   │   ├── update_project_context.py

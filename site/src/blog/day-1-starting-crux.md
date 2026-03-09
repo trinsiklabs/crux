@@ -1,6 +1,6 @@
 ---
 title: "day 1: starting crux"
-date: 2026-03-05
+date: 2026-03-05T12:00:00
 tags: [shipping, philosophy]
 summary: "building crux because every AI coding tool traps your intelligence. here's the plan."
 ---

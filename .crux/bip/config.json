@@ -1,0 +1,48 @@
+{
+  "social_set_id": 288244,
+  "api_key_path": "/home/key/.crux/.crux/bip/typefully.key",
+  "commit_threshold": 4,
+  "token_threshold": 50000,
+  "interaction_threshold": 30,
+  "cooldown_minutes": 15,
+  "target_posts_per_hour": 1,
+  "quiet_hours": null,
+  "high_signal_events": [
+    "test_green",
+    "new_mcp_tool",
+    "git_tag",
+    "pr_merge",
+    "crux_switch",
+    "crux_adopt",
+    "knowledge_promoted",
+    "correction_detected",
+    "plan_implemented"
+  ],
+  "platforms": [
+    "x"
+  ],
+  "never_words": [
+    "Revolutionary",
+    "Game-changing",
+    "Excited to announce",
+    "I'm thrilled",
+    "Delighted to share",
+    "Proud to announce"
+  ],
+  "voice_style": "all lowercase except proper nouns",
+  "voice_tone": "technical, direct, no hype, builder energy",
+  "escalation_rules": {
+    "plan_implemented": {
+      "action": "blog_post",
+      "description": "Completed plans warrant full blog posts"
+    },
+    "x_post": {
+      "max_frequency": "1/15min",
+      "cooldown_seconds": 900
+    },
+    "blog_post": {
+      "triggers": ["plan_implemented", "major_feature", "release"],
+      "auto_schedule_x_thread": true
+    }
+  }
+}

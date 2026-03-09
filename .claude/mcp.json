@@ -1,15 +1,15 @@
 {
   "mcpServers": {
     "crux": {
-      "command": "/opt/homebrew/opt/python@3.14/libexec/bin/python",
+      "command": "/home/key/.crux/.venv/bin/python",
       "args": [
         "-m",
         "scripts.lib.crux_mcp_server"
       ],
-      "cwd": "/Users/user/personal/crux",
       "env": {
-        "CRUX_PROJECT": "/Users/user/personal/crux",
-        "CRUX_HOME": "/Users/user"
+        "CRUX_PROJECT": "/home/key/.crux",
+        "CRUX_HOME": "/home/key",
+        "PYTHONPATH": "/home/key/.crux"
       }
     }
   }

@@ -1,0 +1,66 @@
+[
+  [
+    "PLAN-303",
+    "shipped plan-303: Strategic: Anthropic ClawHub marketplace launch - analyze opportunity for Crux skills publishing, cr\n\nhttps://runcrux.io/blog/plan-303-strategic-anthropic-clawhub-marketplace-launch/"
+  ],
+  [
+    "PLAN-304",
+    "shipped plan-304: Create missing Crux website pages: docs/, about/, architecture/, safety-pipeline/, switching/, adopt\n\nhttps://runcrux.io/blog/plan-304-create-missing-crux-website-pages-docs-about/"
+  ],
+  [
+    "PLAN-306",
+    "shipped plan-306: Fix deploy-runcrux.io.sh path issue for automated deploys\n\nhttps://runcrux.io/blog/plan-306-fix-deploy-runcrux-io-sh-path-issue-for-automated/"
+  ],
+  [
+    "PLAN-309",
+    "shipped plan-309: BIP coordinated publish: blog post + scheduled X thread + site deploy as atomic workflow\n\nhttps://runcrux.io/blog/plan-309-bip-coordinated-publish-blog-post-scheduled-x-t/"
+  ],
+  [
+    "PLAN-310",
+    "shipped plan-310: Site content auto-revision: detect feature changes (tools, modes, tests) and update affected pages a\n\nhttps://runcrux.io/blog/plan-310-site-content-auto-revision-detect-feature-changes/"
+  ],
+  [
+    "PLAN-311",
+    "shipped plan-311: BIP escalation rule: completed plan = blog post, X posts max 1/15min\n\nhttps://runcrux.io/blog/plan-311-bip-escalation-rule-completed-plan-blog-post-x/"
+  ],
+  [
+    "PLAN-312",
+    "shipped plan-312: BIP background processor: daemon that watches shipping activity and triggers draft generation\n\nhttps://runcrux.io/blog/plan-312-bip-background-processor-daemon-that-watches-ship/"
+  ],
+  [
+    "PLAN-313",
+    "shipped plan-313: BIP inline review flow: a/e/s keystroke approval in terminal between work\n\nhttps://runcrux.io/blog/plan-313-bip-inline-review-flow-a-e-s-keystroke-approval-i/"
+  ],
+  [
+    "PLAN-314",
+    "shipped plan-314: BIP high-signal event hooks: wire Claude Code hooks to fire BIP triggers (test green, PR merge, new \n\nhttps://runcrux.io/blog/plan-314-bip-high-signal-event-hooks-wire-claude-code-hook/"
+  ],
+  [
+    "PLAN-315",
+    "shipped plan-315: BIP analytics: engagement tracking from Typefully API, blog traffic, star/fork counts\n\nhttps://runcrux.io/blog/plan-315-bip-analytics-engagement-tracking-from-typefully/"
+  ],
+  [
+    "PLAN-317",
+    "shipped plan-317: Repo-aware BIP hooks: detect which adopted project a file belongs to, route logging to correct proje\n\nhttps://runcrux.io/blog/plan-317-repo-aware-bip-hooks-detect-which-adopted-project/"
+  ],
+  [
+    "PLAN-318",
+    "shipped plan-318: Website page: crux adopt - what it does, when to use, BIP integration, session capture, hooks setup,\n\nhttps://runcrux.io/blog/plan-318-website-page-crux-adopt-what-it-does-when-to-u/"
+  ],
+  [
+    "PLAN-319",
+    "shipped plan-319: Website page: crux switch - what it does, when/how to use, tool transitions, what it cannot do, vs c\n\nhttps://runcrux.io/blog/plan-319-website-page-crux-switch-what-it-does-when-how/"
+  ],
+  [
+    "PLAN-321",
+    "shipped plan-321: crux ingest-session - background daemon for Claude Code session migration. Comprehensive capture, id\n\nhttps://runcrux.io/blog/plan-321-crux-ingest-session-background-daemon-for-claude/"
+  ],
+  [
+    "PLAN-324",
+    "shipped plan-324: Wire BIP end-to-end: plan_implemented event \u2192 escalation check \u2192 coordinated_publish (blog + X + dep\n\nhttps://runcrux.io/blog/plan-324-wire-bip-end-to-end-plan-implemented-event-esca/"
+  ],
+  [
+    "PLAN-326",
+    "shipped plan-326: Test plan - verify BIP end-to-end flow triggers blog generation and site deploy\n\nhttps://runcrux.io/blog/plan-326-test-plan-verify-bip-end-to-end-flow-triggers-bl/"
+  ]
+]

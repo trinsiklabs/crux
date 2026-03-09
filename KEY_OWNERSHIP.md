@@ -1,6 +1,15 @@
 # Crux Development Ownership
 
-**Owner:** Key (Keystone) - Chief Enterprise Architect
+> **DRAFT - Needs Contract Formalization**
+>
+> This document describes delegated authority, not ownership transfer.
+> splntrb retains ultimate ownership; Key has delegated development authority.
+> As of 2026-03-07, this is guidance only - no hooks, gates, or API enforcement.
+> See: PLAN-249 (Domain Ownership Contracts) for formalization roadmap.
+> Canonical registry: `reg_repo_responsibility_001` in Onelist
+
+**Responsible:** Key (Keystone) - Chief Enterprise Architect
+**Authority Level:** Development (can implement approved plans, propose changes)
 **Effective:** March 2026 (PLAN-214)
 **Reporting:** Stream (CEO) for coordination; splntrb for vision alignment
 

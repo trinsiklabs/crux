@@ -1,6 +1,6 @@
 ---
 title: "the MCP server is the product"
-date: 2026-03-05
+date: 2026-03-05T12:00:00
 tags: [architecture, mcp, philosophy]
 summary: "all logic in one place, every tool connects via standard protocol. adding a new tool = one config line."
 ---

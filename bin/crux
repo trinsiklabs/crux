@@ -415,6 +415,9 @@ ${BOLD}Setup Options:${NC}
   crux setup              Full interactive setup
   crux setup --update     Non-interactive refresh (symlinks, scripts)
 
+${BOLD}Note:${NC}
+  Knowledge ingestion moved to key-ops: use 'onelist-ingest' instead of 'crux ingest'
+
 ${BOLD}Build-in-Public:${NC}
   crux bip                Check triggers and show gathered material
   crux bip --status       Show BIP state (counters, cooldown, recent posts)
@@ -440,6 +443,11 @@ EOF
 # Main dispatch
 ###############################################################################
 case "${1:-help}" in
+    ingest)
+        warn "The 'ingest' command has been moved to key-ops domain."
+        info "Use 'onelist-ingest' instead (PLAN-372)"
+        exit 1
+        ;;
     status)  cmd_status ;;
     switch)  shift; cmd_switch "$@" ;;
     bip)     shift; cmd_bip "$@" ;;

@@ -1,0 +1,1 @@
+{"source_key": "plan:PLAN-317", "draft_preview": "just shipped repo-aware session logging for crux.\n\nproblem: working on multiple projects in one session. don't want crux content mixed with other work.\n\nsolution: hooks detect which repo you're editin", "timestamp": "2026-03-08T02:28:35.837524+00:00"}
