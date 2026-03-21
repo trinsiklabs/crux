@@ -202,7 +202,7 @@ class TestGetStatus:
 
         result = get_status(project_dir=env["project"], home=env["home"])
         assert result["mcp"]["registered"] is True
-        assert result["mcp"]["tool_count"] == 37
+        assert result["mcp"]["tool_count"] == 42
 
     def test_mcp_not_registered_when_no_config(self, env):
         from scripts.lib.crux_status import get_status
@@ -1069,3 +1069,49 @@ class TestFormatFindings:
         from scripts.lib.crux_status import format_findings
         result = format_findings([{"severity": "info", "title": "t", "detail": "d"}])
         assert result.startswith("FINDINGS")
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap tests — lines 443-450
+# ---------------------------------------------------------------------------
+
+class TestLivenessMCPTimeoutAndException:
+    """Test MCP loadable check exception branches."""
+
+    def test_mcp_loadable_reports_timeout(self, env, monkeypatch):
+        """Lines 443-448: subprocess.TimeoutExpired is caught."""
+        from scripts.lib.crux_status import check_liveness
+        import subprocess
+
+        original_run = subprocess.run
+
+        def timeout_run(cmd, *args, **kwargs):
+            cmd_str = " ".join(str(c) for c in cmd) if isinstance(cmd, list) else str(cmd)
+            if "crux_mcp_server" in cmd_str:
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=10)
+            return original_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", timeout_run)
+        checks = check_liveness(env["project"], env["home"])
+        mcp_check = next(c for c in checks if "mcp loadable" in c["name"].lower())
+        assert mcp_check["passed"] is False
+        assert "timed out" in mcp_check["message"].lower()
+
+    def test_mcp_loadable_reports_generic_exception(self, env, monkeypatch):
+        """Lines 449-450: generic Exception is caught."""
+        from scripts.lib.crux_status import check_liveness
+        import subprocess
+
+        original_run = subprocess.run
+
+        def error_run(cmd, *args, **kwargs):
+            cmd_str = " ".join(str(c) for c in cmd) if isinstance(cmd, list) else str(cmd)
+            if "crux_mcp_server" in cmd_str:
+                raise PermissionError("no permission")
+            return original_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", error_run)
+        checks = check_liveness(env["project"], env["home"])
+        mcp_check = next(c for c in checks if "mcp loadable" in c["name"].lower())
+        assert mcp_check["passed"] is False
+        assert "failed" in mcp_check["message"].lower()

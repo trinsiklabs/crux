@@ -500,6 +500,73 @@ def bip_get_analytics(
     )
 
 
+@mcp.tool()
+def get_model_for_task(task_type: str) -> dict:
+    """Get the recommended model for a task type.
+
+    Task types: plan_audit, code_audit, security_audit, doc_audit,
+    fix_generation, independence, title, compaction, write, e2e_test.
+
+    Returns the best available model for the task's tier, considering
+    which providers have credentials configured.
+
+    Args:
+        task_type: The type of task to get a model for.
+    """
+    from scripts.lib.crux_model_tiers import (
+        TASK_ROUTING,
+        get_task_model,
+        resolve_tier,
+    )
+    tier = TASK_ROUTING.get(task_type, "standard")
+    model = get_task_model(task_type)
+    return {
+        "task_type": task_type,
+        "tier": tier,
+        "model": model,
+        "available": model is not None,
+    }
+
+
+@mcp.tool()
+def get_available_tiers() -> dict:
+    """Show what model is available at each tier.
+
+    Tiers (low to high): micro, fast, local, standard, frontier.
+    Each tier resolves to the best available model based on provider credentials.
+    """
+    from scripts.lib.crux_model_tiers import get_available_tiers as _get_tiers
+    return _get_tiers()
+
+
+@mcp.tool()
+def get_mode_model(mode: str, role: str = "primary") -> dict:
+    """Get the recommended model for a Crux mode.
+
+    Each mode has a preferred tier for its primary task and optionally
+    for auditing. For example, build-py uses 'local' for coding but
+    'fast' for audit checks.
+
+    Args:
+        mode: The Crux mode name (e.g., "build-py", "plan", "review").
+        role: "primary" for the main task, "audit" for audit checks.
+    """
+    from scripts.lib.crux_model_tiers import (
+        MODE_TIERS,
+        get_mode_model as _get_mode_model,
+    )
+    mode_config = MODE_TIERS.get(mode, {})
+    tier = mode_config.get(role, "standard")
+    model = _get_mode_model(mode, role)
+    return {
+        "mode": mode,
+        "role": role,
+        "tier": tier,
+        "model": model,
+        "available": model is not None,
+    }
+
+
 async def run():  # pragma: no cover — starts blocking stdio server
     """Run the MCP server on stdio transport."""
     await mcp.run_stdio_async()
