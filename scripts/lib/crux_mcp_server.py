@@ -567,6 +567,17 @@ def get_mode_model(mode: str, role: str = "primary") -> dict:
     }
 
 
+@mcp.tool()
+def get_model_quality_stats() -> dict:
+    """Get model quality statistics — success rates per task type and tier.
+
+    Shows how often each model tier succeeds without escalation.
+    Use this to understand which tasks need better models.
+    """
+    from scripts.lib.crux_model_quality import get_quality_stats
+    return get_quality_stats()
+
+
 async def run():  # pragma: no cover — starts blocking stdio server
     """Run the MCP server on stdio transport."""
     await mcp.run_stdio_async()
