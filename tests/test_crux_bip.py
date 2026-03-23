@@ -237,7 +237,6 @@ class TestHistory:
 
 
 # ---------------------------------------------------------------------------
-<<<<<<< HEAD
 # Escalation Rules
 # ---------------------------------------------------------------------------
 
@@ -279,7 +278,9 @@ class TestEscalationRules:
         assert "plan_implemented" in cfg.escalation_rules
         assert "x_post" in cfg.escalation_rules
         assert "blog_post" in cfg.escalation_rules
-=======
+
+
+# ---------------------------------------------------------------------------
 # Coverage gap tests — lines 135, 138-139, 156, 161-162
 # ---------------------------------------------------------------------------
 
@@ -323,4 +324,3 @@ class TestBipCoverageGaps:
         monkeypatch.setattr("builtins.open", bad_open)
         history = load_history(bip_dir)
         assert history == []
->>>>>>> 4c3c8d1 (consolidate: docs, tests, self-adoption, security hardening, and build plans)
