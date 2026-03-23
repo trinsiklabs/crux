@@ -578,6 +578,43 @@ def get_model_quality_stats() -> dict:
     return get_quality_stats()
 
 
+# ---------------------------------------------------------------------------
+# Impact analysis
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def analyze_impact(
+    prompt: str,
+    top_n: int = 20,
+    include_reasons: bool = True,
+) -> dict:
+    """Rank files by relevance to a prompt using git history, keywords, and LSP.
+
+    Returns the top N files most likely to be relevant to the described task,
+    scored by keyword match, git churn, LSP symbols, and proximity.
+
+    Args:
+        prompt: Natural language description of the task (e.g. "add OAuth2 login flow").
+        top_n: Maximum number of files to return (default 20).
+        include_reasons: Include per-dimension score breakdown (default True).
+    """
+    from scripts.lib.impact.scorer import rank_files
+    results = rank_files(
+        root=_project(),
+        prompt=prompt,
+        top_n=top_n,
+        include_reasons=include_reasons,
+    )
+    return {
+        "files": [
+            {"path": r.path, "score": r.score, "reasons": r.reasons}
+            for r in results
+        ],
+        "total": len(results),
+        "prompt": prompt,
+    }
+
+
 async def run():  # pragma: no cover — starts blocking stdio server
     """Run the MCP server on stdio transport."""
     await mcp.run_stdio_async()

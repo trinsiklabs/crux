@@ -124,6 +124,7 @@ class TestMCPToolRegistration:
             "get_cross_project_digest",
             "figma_get_tokens",
             "figma_get_components",
+            "analyze_impact",
         }
         registered = set(tools.keys())
         assert expected.issubset(registered), f"Missing tools: {expected - registered}"
@@ -335,3 +336,26 @@ class TestBipToolWrappers:
     def test_bip_status_returns_result(self, live_env):
         result = live_env["mod"].bip_status()
         assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# Impact analysis tool wrapper
+# ---------------------------------------------------------------------------
+
+class TestAnalyzeImpact:
+    """Test the analyze_impact MCP tool wrapper."""
+
+    def test_returns_dict(self, live_env):
+        result = live_env["mod"].analyze_impact(prompt="auth login")
+        assert isinstance(result, dict)
+        assert "files" in result
+        assert "total" in result
+
+    def test_empty_prompt(self, live_env):
+        result = live_env["mod"].analyze_impact(prompt="")
+        assert result["files"] == []
+        assert result["total"] == 0
+
+    def test_top_n(self, live_env):
+        result = live_env["mod"].analyze_impact(prompt="test", top_n=5)
+        assert len(result["files"]) <= 5
