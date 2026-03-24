@@ -1,8 +1,15 @@
-# Crux User Manual
+---
+title: Crux User Guide
+last_updated: 2026-03-24
+migration_date: 2026-03-24
+migration_status: normalized
+---
+
+# Crux User Guide
 
 ## Introduction
 
-Welcome to Crux—a self-improving AI operating system built for developers who want to work smarter with local AI. Crux wraps your local LLMs (via Ollama) and agentic coding tools (primarily OpenCode CLI) into a unified system that learns from your workflow, adapts to your project needs, and gets safer and more efficient over time.
+Welcome to Crux — a self-improving AI operating system built for developers who want to work smarter with AI. Crux wraps any LLM (local or cloud) and any agentic tool (Claude Code, OpenCode, Cursor, Aider, Roo Code) into a unified system that learns from your workflow, adapts to your project needs, and gets safer and more efficient over time.
 
 This manual assumes you've just run the setup script and are ready to dive in. It's structured to let you jump to what you need right now, then return to deeper sections as you grow more comfortable with the system.
 

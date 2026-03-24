@@ -51,11 +51,11 @@ Crux generates tool-specific configuration from `.crux/` data:
 - **OpenCode**: Symlinks to `~/.config/opencode/` for modes, agents, and knowledge
 - **Cursor**: `.cursor/rules/` with plain markdown rules, `.cursor/mcp.json` for MCP registration
 - **Windsurf**: `.windsurf/rules/` with plain markdown rules, `.windsurf/mcp.json` for MCP registration
-- **MCP Server**: 37-tool FastMCP server (`scripts/lib/crux_mcp_server.py`) accessible from any MCP-compatible client
+- **MCP Server**: 43-tool FastMCP server (`scripts/lib/crux_mcp_server.py`) accessible from any MCP-compatible client
 
 ## The MCP Server
 
-Crux exposes its capabilities via the Model Context Protocol, making them available to any MCP-compatible tool. The server (`scripts/lib/crux_mcp_server.py`) provides 37 tools:
+Crux exposes its capabilities via the Model Context Protocol, making them available to any MCP-compatible tool. The server (`scripts/lib/crux_mcp_server.py`) provides 43 tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -111,7 +111,7 @@ git clone https://github.com/trinsiklabs/crux.git ~/.crux
 source ~/.bashrc          # or ~/.zshrc on macOS
 
 cd your-project
-crux adopt               # Sets up .crux/, MCP server (37 tools), and hooks
+crux adopt               # Sets up .crux/, MCP server (43 tools), and hooks
 ```
 
 Start Claude Code in your project. The Crux MCP tools and hooks (correction detection, interaction logging, session context) are automatically available.
@@ -161,7 +161,7 @@ crux/
 ├── .crux/                      # Project-level Crux data (sessions, analytics, knowledge)
 ├── scripts/
 │   └── lib/                    # 38 Python modules (stdlib + mcp dependency)
-│       ├── crux_mcp_server.py  # 37-tool FastMCP server
+│       ├── crux_mcp_server.py  # 43-tool FastMCP server
 │       ├── crux_mcp_handlers.py# Pure handler functions (no MCP deps)
 │       ├── crux_hooks.py       # Claude Code hook handlers
 │       ├── crux_session.py     # Session state management
@@ -211,7 +211,7 @@ crux/
 ├── templates/                  # AGENTS.md, PROJECT.md, opencode.json
 ├── knowledge/                  # Knowledge base template
 ├── docs/                       # Architecture, modes, safety, learning docs
-├── tests/                      # 1561+ tests (pytest + node:test + bats)
+├── tests/                      # 1374+ tests (pytest + node:test + bats)
 ├── CONTRIBUTING.md
 ├── LICENSE                     # MIT
 └── README.md
@@ -269,9 +269,9 @@ crux/
 
 ## Test Suite
 
-1561+ tests across three frameworks:
+1374+ tests across three frameworks:
 
-- **Python (pytest)**: 1561 tests across 41 test files covering all Python modules with 100% coverage enforced (`--cov=scripts/lib --cov-fail-under=100`)
+- **Python (pytest)**: 1374 tests across 41+ test files covering all Python modules with 100% coverage enforced (`--cov=scripts/lib --cov-fail-under=100`)
 - **JavaScript (node:test)**: 7 test files covering plugins and tools
 - **Bash (bats)**: 8 test files covering setup, CLI, and repo structure
 
