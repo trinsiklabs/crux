@@ -1,5 +1,7 @@
 # Website & Marketing Implementation Status Report
 
+> **Superseded as of 2026-03-24.** Current state: 1374+ tests, 43 MCP tools, 24 modes. See GAPS.md for the live tracker.
+
 **Generated:** 2026-03-07
 **Codebase State:** 1290 tests passing, 37 MCP tools, 23 modes
 

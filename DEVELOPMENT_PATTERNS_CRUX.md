@@ -18,7 +18,7 @@ Project-specific patterns for developing the Crux codebase. This supplements the
 
 ### 1A. MCP Server as Universal Adapter
 
-The MCP server (`scripts/lib/crux_mcp_server.py`, 37 tools) is the primary integration surface. All Crux capabilities are exposed via MCP, making them available to Claude Code, Cursor, Windsurf, and OpenCode without tool-specific adapters.
+The MCP server (`scripts/lib/crux_mcp_server.py`, 43 tools) is the primary integration surface. All Crux capabilities are exposed via MCP, making them available to Claude Code, Cursor, Windsurf, and OpenCode without tool-specific adapters.
 
 **Key separation:** Handler logic lives in `crux_mcp_handlers.py` (pure functions, no MCP dependency). The server file is thin wiring. This makes handlers testable without starting a server and prevents MCP library coupling from spreading.
 
@@ -33,7 +33,7 @@ Modes are markdown files with YAML frontmatter in `modes/`. Each mode controls a
 
 **Why this matters:** When adding or modifying modes, follow these conventions. Violations measurably degrade LLM output quality.
 
-### 1C. Safety Pipeline (5 Gates)
+### 1C. Safety Pipeline (7 Gates)
 
 Pre-flight validation → 8B adversarial audit → 32B second-opinion audit → human approval → DRY_RUN. Gates scale with risk level via `crux_pipeline_config.py`.
 

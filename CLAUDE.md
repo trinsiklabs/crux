@@ -34,7 +34,7 @@ crux/
 ├── commands/                   # 12 custom command definitions (MD)
 ├── scripts/
 │   ├── lib/                    # 38 Python modules (stdlib + mcp)
-│   │   ├── crux_mcp_server.py          # 37-tool FastMCP server
+│   │   ├── crux_mcp_server.py          # 43-tool FastMCP server
 │   │   ├── crux_mcp_handlers.py        # Pure handler functions (no MCP deps)
 │   │   ├── crux_hooks.py               # Claude Code hook handlers
 │   │   ├── crux_hook_runner.py         # Hook execution engine
@@ -77,7 +77,7 @@ crux/
 ├── templates/                  # AGENTS.md, PROJECT.md, opencode.json
 ├── knowledge/                  # Knowledge base template + per-mode dirs
 ├── docs/                       # Architecture, modes, safety, learning docs
-├── tests/                      # 1561 tests (pytest: 41 files, node:test: 7 files, bats: 8 files)
+├── tests/                      # 1374+ tests (pytest: 41 files, node:test: 7 files, bats: 8 files)
 │                               # 100% coverage enforced on scripts/lib/ via pytest --cov-fail-under=100
 ├── CONTRIBUTING.md
 ├── LICENSE                     # MIT
@@ -108,7 +108,7 @@ User data directories (not symlinked): knowledge/, models/, analytics/, scripts/
 
 6. **Five-gate safety pipeline**: Pre-flight validation → 8B adversarial audit → 32B second-opinion audit → human approval → DRY_RUN. Gates scale with risk level.
 
-7. **MCP server as universal adapter**: The 37-tool FastMCP server (`scripts/lib/crux_mcp_server.py`) exposes all Crux capabilities via the Model Context Protocol, making them available to any MCP-compatible client (Claude Code, Cursor, Windsurf, OpenCode). Handler logic lives in `crux_mcp_handlers.py` (pure functions, no MCP dependency) for testability.
+7. **MCP server as universal adapter**: The 43-tool FastMCP server (`scripts/lib/crux_mcp_server.py`) exposes all Crux capabilities via the Model Context Protocol, making them available to any MCP-compatible client (Claude Code, Cursor, Windsurf, OpenCode). Handler logic lives in `crux_mcp_handlers.py` (pure functions, no MCP dependency) for testability.
 
 ## Development Methodology
 
@@ -116,7 +116,7 @@ This project follows DEVELOPMENT_PATTERNS_CRUXDEV.md (in `/Users/user/personal/c
 
 ## Test Infrastructure
 
-- **1561 tests** across pytest (41 files), node:test (7 files), and bats (8 files)
+- **1374+ tests** across pytest (41 files), node:test (7 files), and bats (8 files)
 - **100% coverage enforced** on `scripts/lib/` via `pytest --cov=scripts/lib --cov-fail-under=100`
 - All PRs must pass: `python3 -m pytest tests/ --tb=short --cov=scripts/lib --cov-fail-under=100`
 

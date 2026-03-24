@@ -1,5 +1,7 @@
 # Crux Gap Report
 
+> **Superseded by GAPS.md as of 2026-03-24.** This document reflects the state on 2026-03-06. Current state: 1374+ tests, 43 MCP tools, 24 modes. See GAPS.md for the live gap tracker.
+
 **Generated:** 2026-03-06
 **Codebase State:** 904 tests passing, 25 MCP tools, 23 modes, 7-gate pipeline
 

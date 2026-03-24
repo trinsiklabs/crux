@@ -20,7 +20,7 @@ cd ~/.crux && ./setup.sh
 
 ## What You Get
 
-- **37 MCP tools** — Knowledge, sessions, modes, safety, corrections
+- **43 MCP tools** — Knowledge, sessions, modes, safety, corrections
 - **24 specialized modes** — build-py, security, debug, design-ui, and more
 - **Session persistence** — State survives across sessions and tools
 - **Correction detection** — Learn from AI mistakes automatically

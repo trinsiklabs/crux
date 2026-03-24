@@ -134,5 +134,5 @@ crux adopt
 ## See Also
 
 - [Architecture](/architecture/) — How the system works
-- [All Tools](/docs/mcp-server/) — 37 MCP tools documented
+- [All Tools](/docs/mcp-server/) — 43 MCP tools documented
 - [Modes](/modes/) — 24 specialized modes
