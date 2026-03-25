@@ -151,7 +151,7 @@ def _sanitize_prompt(prompt: str) -> str:
     return _sanitize_value(prompt)
 
 from scripts.lib.crux_paths import get_project_paths, get_user_paths
-from scripts.lib.crux_session import load_session, save_session, update_session
+from scripts.lib.crux_session import load_session, save_session, update_session, auto_handoff
 
 
 def _now_iso() -> str:
@@ -511,6 +511,13 @@ def handle_post_tool_use(
             else:
                 _logger.warning(f"Unsafe file path rejected: {file_path!r}")
 
+    # Auto-capture decisions from git commits (infrastructure enforcement)
+    if tool_name == "Bash":
+        decision = _extract_commit_message(tool_input, tool_output)
+        if decision:
+            update_session(crux_dir, add_decision=decision)
+            result["decision_captured"] = decision
+
     # Increment BIP interaction counter
     _increment_bip_counter(project_dir, "interactions_since_last_post", 1)
 
@@ -530,6 +537,34 @@ def handle_post_tool_use(
             result["processors_run"] = bg_result.get("processors_run", [])
 
     return result
+
+
+_COMMIT_MSG_RE = re.compile(r'git commit\s+-m\s+"([^"]+)"', re.IGNORECASE)
+_COMMIT_OUTPUT_RE = re.compile(r'\[[\w/.-]+\s+\w+\]\s+(.+)')
+
+
+def _extract_commit_message(tool_input: dict, tool_output: str) -> str | None:
+    """Extract commit message from git commit commands.
+
+    Tries to parse from the command string first, falls back to output.
+    Returns the message or None if not a commit.
+    """
+    command = tool_input.get("command", "")
+    if not isinstance(command, str) or "git commit" not in command:
+        return None
+
+    # Try extracting from command: git commit -m "message"
+    match = _COMMIT_MSG_RE.search(command)
+    if match:
+        return match.group(1)[:256]
+
+    # Try extracting from output: [main abc123] message
+    if isinstance(tool_output, str):
+        match = _COMMIT_OUTPUT_RE.search(tool_output)
+        if match:
+            return match.group(1)[:256]
+
+    return None
 
 
 def _increment_bip_counter(project_dir: str, field_name: str, amount: int = 1) -> None:
@@ -639,10 +674,20 @@ def handle_stop(
     project_dir: str,
     home: str,
 ) -> dict:
-    """Handle Stop — update session timestamp, record interaction count, check TDD, run processors."""
+    """Handle Stop — update session, auto-write handoff, check TDD, run processors.
+
+    Auto-writes handoff on every stop so killing a session preserves state.
+    Infrastructure enforcement: no LLM action required.
+    """
     crux_dir = os.path.join(project_dir, ".crux")
     state = load_session(crux_dir)
     save_session(state, project_crux_dir=crux_dir)  # updates timestamp
+
+    # Auto-write handoff — infrastructure enforcement, not LLM-dependent
+    try:
+        auto_handoff(crux_dir)
+    except Exception as e:
+        _logger.debug("Auto-handoff on stop failed: %s", e)
 
     count = _count_interactions(project_dir)
 
