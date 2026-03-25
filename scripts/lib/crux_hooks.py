@@ -546,23 +546,27 @@ _COMMIT_OUTPUT_RE = re.compile(r'\[[\w/.-]+\s+\w+\]\s+(.+)')
 def _extract_commit_message(tool_input: dict, tool_output: str) -> str | None:
     """Extract commit message from git commit commands.
 
-    Tries to parse from the command string first, falls back to output.
-    Returns the message or None if not a commit.
+    Prefers output (always clean) over command string (may have heredocs).
+    Returns the first line of the message or None if not a commit.
     """
     command = tool_input.get("command", "")
     if not isinstance(command, str) or "git commit" not in command:
         return None
 
-    # Try extracting from command: git commit -m "message"
-    match = _COMMIT_MSG_RE.search(command)
-    if match:
-        return match.group(1)[:256]
-
-    # Try extracting from output: [main abc123] message
+    # Prefer output: [main abc123] message — always clean
     if isinstance(tool_output, str):
         match = _COMMIT_OUTPUT_RE.search(tool_output)
         if match:
-            return match.group(1)[:256]
+            msg = match.group(1).strip()[:256]
+            if msg and not msg.startswith("$("):
+                return msg
+
+    # Fallback to command: git commit -m "message" (skip heredocs)
+    match = _COMMIT_MSG_RE.search(command)
+    if match:
+        msg = match.group(1).strip()[:256]
+        if msg and not msg.startswith("$("):
+            return msg
 
     return None
 

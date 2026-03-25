@@ -823,10 +823,15 @@ def handle_restore_context(project_dir: str, home: str) -> dict:
     if state.context_summary:
         parts.append(f"\n## Context Summary\n{state.context_summary}")
 
-    # Key decisions
-    if state.key_decisions:
-        parts.append(f"\n## Key Decisions ({len(state.key_decisions)} total)")
-        for d in state.key_decisions:
+    # Key decisions (last 10, skip garbage)
+    clean_decisions = [
+        d for d in state.key_decisions
+        if d and not d.startswith("$(") and len(d) < 300
+    ]
+    if clean_decisions:
+        recent = clean_decisions[-10:]
+        parts.append(f"\n## Key Decisions ({len(clean_decisions)} total, showing last {len(recent)})")
+        for d in recent:
             parts.append(f"- {d}")
 
     # Pending tasks
@@ -835,10 +840,19 @@ def handle_restore_context(project_dir: str, home: str) -> dict:
         for task in state.pending:
             parts.append(f"- {task}")
 
-    # Files touched
+    # Files touched (last 20, deduplicated)
     if state.files_touched:
-        parts.append(f"\n## Files Touched ({len(state.files_touched)} files)")
+        # Deduplicate preserving order, take last 20
+        seen: set[str] = set()
+        unique: list[str] = []
         for f in state.files_touched:
+            basename = os.path.basename(f)
+            if basename not in seen:
+                seen.add(basename)
+                unique.append(f)
+        recent_files = unique[-20:]
+        parts.append(f"\n## Files Touched ({len(unique)} unique, showing last {len(recent_files)})")
+        for f in recent_files:
             parts.append(f"- {f}")
 
     # Handoff
