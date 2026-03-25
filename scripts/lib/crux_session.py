@@ -143,12 +143,17 @@ def auto_handoff(project_crux_dir: str) -> str:
         lines.append(f"**Working on:** {state.working_on}")
     lines.append("")
 
-    if state.key_decisions:
+    # Filter garbage decisions (heredoc captures, too-long entries)
+    clean_decisions = [
+        d for d in state.key_decisions
+        if d and not d.startswith("$(") and len(d) < 300
+    ]
+    if clean_decisions:
         lines.append("## Key Decisions")
-        for d in state.key_decisions[:MAX_HANDOFF_ITEMS]:
+        for d in clean_decisions[-MAX_HANDOFF_ITEMS:]:
             lines.append(f"- {d}")
-        if len(state.key_decisions) > MAX_HANDOFF_ITEMS:
-            lines.append(f"- ... and {len(state.key_decisions) - MAX_HANDOFF_ITEMS} more")
+        if len(clean_decisions) > MAX_HANDOFF_ITEMS:
+            lines.append(f"- ... and {len(clean_decisions) - MAX_HANDOFF_ITEMS} more")
         lines.append("")
 
     if state.files_touched:
