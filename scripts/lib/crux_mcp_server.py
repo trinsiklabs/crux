@@ -62,7 +62,10 @@ mcp = FastMCP("crux", instructions=(
     "without advance notice. This is NOT optional.\n\n"
     "When switching tools, call switch_tool_to(tool_id). It auto-writes handoff from "
     "accumulated session state and generates the target tool's MCP config.\n\n"
-    "On session start, call restore_context() to load previous session state."
+    "On session start, call restore_context() to load previous session state. "
+    "If the response includes session_adoption.available=true, inform the user "
+    "that previous session logs were detected and ask if they'd like to adopt "
+    "them into Crux for portability."
 ))
 
 

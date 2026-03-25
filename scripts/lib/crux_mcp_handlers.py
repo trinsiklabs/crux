@@ -706,21 +706,89 @@ def handle_log_interaction(
 # restore_context — rebuild full session context after restart
 # ---------------------------------------------------------------------------
 
+def _detect_session_adoption(project_dir: str, home: str) -> dict:
+    """Detect un-ingested Claude Code session .jsonl files.
+
+    Infrastructure enforcement: detects available sessions without
+    relying on hooks or LLM cooperation.
+    """
+    result: dict = {"available": False}
+    try:
+        claude_projects = os.path.join(home, ".claude", "projects")
+        if not os.path.isdir(claude_projects):
+            return result
+
+        # Claude Code uses project path with / replaced by -
+        project_hash = "-" + project_dir.replace("/", "-")
+        session_dir = os.path.join(claude_projects, project_hash)
+        if not os.path.isdir(session_dir):
+            return result
+
+        # Find .jsonl files
+        jsonl_files = [
+            os.path.join(session_dir, f)
+            for f in os.listdir(session_dir)
+            if f.endswith(".jsonl") and os.path.isfile(os.path.join(session_dir, f))
+        ]
+        if not jsonl_files:
+            return result
+
+        # Check if already ingested
+        crux_dir = os.path.join(project_dir, ".crux")
+        checkpoint_path = os.path.join(crux_dir, "ingest", "checkpoint.json")
+        ingested: set[str] = set()
+        if os.path.isfile(checkpoint_path):
+            try:
+                with open(checkpoint_path) as f:
+                    cp = json.load(f)
+                ingested = set(cp.get("ingested_files", []))
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        uningest = [f for f in jsonl_files if f not in ingested]
+        if not uningest:
+            return result
+
+        # Count lines across uningest files
+        total_lines = 0
+        for fp in uningest:
+            try:
+                with open(fp) as f:
+                    total_lines += sum(1 for _ in f)
+            except OSError:
+                pass
+
+        result = {
+            "available": True,
+            "session_count": len(uningest),
+            "total_lines": total_lines,
+            "message": (
+                f"Found {len(uningest)} session log(s) with {total_lines} entries "
+                f"that haven't been ingested into Crux. Would you like to adopt "
+                f"these sessions for portability? This captures decisions, files "
+                f"touched, and corrections from previous sessions."
+            ),
+        }
+    except Exception as e:
+        logger.debug("Session adoption detection failed: %s", e)
+
+    return result
+
+
 def handle_restore_context(project_dir: str, home: str) -> dict:
     """Rebuild full session context for injection after a restart.
 
-    Returns a formatted context string containing:
-    - Active mode and its prompt
-    - Working on description
-    - Key decisions
-    - Pending tasks
-    - Files touched
-    - Handoff context
-    - Context summary
+    Also activates session logging and detects un-ingested session files.
+    Returns a formatted context string plus session_adoption info.
     """
     project_paths = get_project_paths(project_dir)
     user_paths = get_user_paths(home)
-    state = load_session(str(project_paths.root))
+
+    # Activate session: update timestamp, ensure state exists
+    crux_dir = str(project_paths.root)
+    update_session(project_crux_dir=crux_dir)
+
+    state = load_session(crux_dir)
     handoff = _read_handoff(str(project_paths.root))
 
     parts: list[str] = []
@@ -777,7 +845,18 @@ def handle_restore_context(project_dir: str, home: str) -> dict:
     if handoff:
         parts.append(f"\n## Handoff Context\n{handoff}")
 
-    return {"context": "\n".join(parts)}
+    resp: dict = {"context": "\n".join(parts)}
+
+    # Detect un-ingested session files (infrastructure enforcement)
+    adoption = _detect_session_adoption(project_dir, home)
+    if adoption.get("available"):
+        resp["session_adoption"] = adoption
+        parts.append(f"\n## Session Adoption Available\n{adoption['message']}")
+        resp["context"] = "\n".join(parts)
+    else:
+        resp["session_adoption"] = adoption
+
+    return resp
 
 
 def handle_verify_health(project_dir: str, home: str) -> dict:
