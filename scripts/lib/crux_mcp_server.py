@@ -54,7 +54,16 @@ from scripts.lib.crux_mcp_handlers import (
     handle_bip_get_analytics,
 )
 
-mcp = FastMCP("crux", instructions="Crux AI operating system — knowledge, sessions, modes, and tool switching.")
+mcp = FastMCP("crux", instructions=(
+    "Crux AI operating system — knowledge, sessions, modes, and tool switching.\n\n"
+    "IMPORTANT: After every significant action (file edit, decision, task completion), "
+    "call update_session() with working_on, add_decision, or add_file as appropriate. "
+    "Session state must be continuously maintained so context can be restored at any time "
+    "without advance notice. This is NOT optional.\n\n"
+    "When switching tools, call switch_tool_to(tool_id). It auto-writes handoff from "
+    "accumulated session state and generates the target tool's MCP config.\n\n"
+    "On session start, call restore_context() to load previous session state."
+))
 
 
 def _home() -> str:

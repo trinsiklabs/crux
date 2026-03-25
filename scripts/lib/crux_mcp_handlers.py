@@ -448,21 +448,57 @@ def handle_switch_tool(
     project_dir: str,
     home: str,
 ) -> dict:
-    """Switch to a different AI coding tool."""
+    """Switch to a different AI coding tool.
+
+    Auto-writes handoff from accumulated session state, generates the
+    target tool's MCP config, and returns launch instructions.
+    """
+    from scripts.lib.crux_session import auto_handoff
+    from scripts.lib.crux_tool_recipes import get_recipe, generate_mcp_config
+    from scripts.lib.crux_paths import get_crux_repo, get_crux_python
+
+    # Auto-write handoff from current session state
+    crux_dir = os.path.join(project_dir, ".crux")
+    auto_handoff(crux_dir)
+
+    # Try existing sync_tool first (full adapter: modes, symlinks, etc.)
     result = switch_tool(
         target_tool=target_tool,
         project_dir=project_dir,
         home=home,
     )
+
     resp: dict = {
         "success": result.success,
         "from_tool": result.from_tool,
         "to_tool": result.to_tool,
     }
-    if result.error:
-        resp["error"] = result.error
+
+    # If sync_tool failed (unsupported tool), try recipe-based config
+    if not result.success:
+        recipe = get_recipe(target_tool)
+        if recipe is not None:
+            generated = generate_mcp_config(
+                target_tool, project_dir, get_crux_repo(), get_crux_python(),
+            )
+            if generated:
+                resp["success"] = True
+                resp["config_written"] = True
+                resp.pop("error", None)
+            else:
+                resp["error"] = result.error
+        else:
+            resp["error"] = result.error
+
     if result.items_synced:
         resp["items_synced"] = result.items_synced
+
+    # Always include launch instructions
+    recipe = get_recipe(target_tool)
+    if recipe:
+        resp["launch_command"] = recipe.launch_command
+    resp["restore_instruction"] = "Call restore_context() on first message in the new session."
+
     return resp
 
 

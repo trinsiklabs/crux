@@ -122,6 +122,59 @@ def update_session(
     return state
 
 
+MAX_HANDOFF_ITEMS = 50
+
+
+def auto_handoff(project_crux_dir: str) -> str:
+    """Generate and write handoff content from accumulated session state.
+
+    Reads the current session state and produces a structured handoff
+    document. Writes it to the handoff file automatically. Returns the
+    handoff content string.
+    """
+    state = load_session(project_crux_dir)
+    lines: list[str] = ["# Session Handoff (auto-generated)", ""]
+
+    if state.active_mode:
+        lines.append(f"**Mode:** {state.active_mode}")
+    if state.active_tool:
+        lines.append(f"**Tool:** {state.active_tool}")
+    if state.working_on:
+        lines.append(f"**Working on:** {state.working_on}")
+    lines.append("")
+
+    if state.key_decisions:
+        lines.append("## Key Decisions")
+        for d in state.key_decisions[:MAX_HANDOFF_ITEMS]:
+            lines.append(f"- {d}")
+        if len(state.key_decisions) > MAX_HANDOFF_ITEMS:
+            lines.append(f"- ... and {len(state.key_decisions) - MAX_HANDOFF_ITEMS} more")
+        lines.append("")
+
+    if state.files_touched:
+        lines.append("## Files Touched")
+        for f in state.files_touched[:MAX_HANDOFF_ITEMS]:
+            lines.append(f"- {f}")
+        if len(state.files_touched) > MAX_HANDOFF_ITEMS:
+            lines.append(f"- ... and {len(state.files_touched) - MAX_HANDOFF_ITEMS} more")
+        lines.append("")
+
+    if state.pending:
+        lines.append("## Pending Tasks")
+        for p in state.pending:
+            lines.append(f"- {p}")
+        lines.append("")
+
+    if state.context_summary:
+        lines.append("## Context")
+        lines.append(state.context_summary)
+        lines.append("")
+
+    content = "\n".join(lines)
+    write_handoff(content, project_crux_dir)
+    return content
+
+
 def write_handoff(content: str, project_crux_dir: str) -> None:
     """Write handoff context for the next mode or tool."""
     path = _handoff_path(project_crux_dir)
