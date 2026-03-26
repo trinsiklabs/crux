@@ -2,57 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(grep:*)",
-      "Bash(npm install:*)",
-      "Bash(bats:*)",
-      "Bash(node:*)",
+      "Bash(cargo:*)",
       "Bash(wc:*)",
-      "Bash(bash:*)"
-    ]
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/opt/homebrew/opt/python@3.14/libexec/bin/python -m scripts.lib.crux_hook_runner SessionStart"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/opt/homebrew/opt/python@3.14/libexec/bin/python -m scripts.lib.crux_hook_runner PostToolUse"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/opt/homebrew/opt/python@3.14/libexec/bin/python -m scripts.lib.crux_hook_runner UserPromptSubmit"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/opt/homebrew/opt/python@3.14/libexec/bin/python -m scripts.lib.crux_hook_runner Stop"
-          }
-        ]
-      }
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr:*)"
     ]
   }
 }
