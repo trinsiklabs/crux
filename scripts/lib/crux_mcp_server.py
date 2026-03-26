@@ -69,12 +69,18 @@ mcp = FastMCP("crux", instructions=(
 ))
 
 
+# Cache cwd at import time — MCP server is spawned per-project by the tool,
+# so cwd at startup IS the project directory. os.getcwd() can drift if
+# subprocesses change directory.
+_STARTUP_CWD = os.getcwd()
+
+
 def _home() -> str:
     return os.environ.get("CRUX_HOME", os.environ.get("HOME", ""))
 
 
 def _project() -> str:
-    return os.environ.get("CRUX_PROJECT", os.getcwd())
+    return os.environ.get("CRUX_PROJECT", _STARTUP_CWD)
 
 
 # ---------------------------------------------------------------------------
