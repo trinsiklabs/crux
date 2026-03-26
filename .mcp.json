@@ -2,24 +2,17 @@
   "mcpServers": {
     "crux": {
       "type": "stdio",
-      "command": "/Users/user/personal/crux/.venv/bin/python",
-      "args": [
-        "-m",
-        "scripts.lib.crux_mcp_server"
-      ],
+      "command": "/Users/user/personal/crux/target/release/crux",
+      "args": ["mcp", "start"],
       "env": {
         "CRUX_PROJECT": "/Users/user/personal/crux",
-        "CRUX_HOME": "/Users/user",
-        "PYTHONPATH": "/Users/user/personal/crux"
+        "CRUX_HOME": "/Users/user"
       }
     },
     "cruxdev": {
       "type": "stdio",
       "command": "/opt/homebrew/opt/python@3.14/bin/python3.14",
-      "args": [
-        "-m",
-        "src.mcp_server"
-      ],
+      "args": ["-m", "src.mcp_server"],
       "cwd": "/Users/user/personal/cruxdev",
       "env": {
         "PYTHONPATH": "/Users/user/personal/cruxdev"
