@@ -6,17 +6,18 @@ description = "Self-improving AI operating system — single binary, zero depend
 license = "MIT"
 
 [dependencies]
-rmcp = { version = "0.16", features = ["server", "transport-io"] }
+rmcp = { version = "0.16", features = ["server", "transport-io", "schemars"] }
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-schemars = "0.8"
+schemars = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"
 regex = "1"
 anyhow = "1"
+shellexpand = "3"
 
 [dev-dependencies]
 tempfile = "3"

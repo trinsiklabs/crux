@@ -7,7 +7,9 @@ pub mod memory;
 pub mod paths;
 pub mod recipes;
 pub mod registry;
+pub mod safety;
 pub mod security;
+pub mod server;
 pub mod session;
 pub mod sync;
 
