@@ -11,3 +11,9 @@ site/_site/
 .crux/bip/
 .crux/marketing/typefully.key
 .crux/sessions/
+
+
+# Added by cargo
+
+/target
+target/

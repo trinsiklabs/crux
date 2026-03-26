@@ -13,7 +13,7 @@
 
 | Current | Language | Lines | Rust Target |
 |---------|----------|-------|-------------|
-| `scripts/lib/` (38 modules) | Python | ~6,000 | `src/lib/` Rust modules |
+| `scripts/lib/` (54 modules) | Python | ~8,000 | `src/lib/` Rust modules |
 | `scripts/lib/crux_mcp_server.py` (56 tools) | Python | ~700 | `src/server.rs` via rmcp |
 | `scripts/lib/crux_mcp_handlers.py` | Python | ~900 | `src/handlers/` modules |
 | `scripts/lib/impact/` (4 modules) | Python | ~500 | `src/impact/` modules |
@@ -24,7 +24,7 @@
 | `setup.sh` | Bash | ~1,500 | `crux setup` subcommand |
 | Tests (1537+) | Python/JS/Bash | ~8,000 | Rust `#[test]` + integration |
 
-**Total current: ~15,000 lines across Python/Bash/JS → single Rust crate.**
+**Total current: ~18,000 lines across 54 Python modules + 666-line bash CLI + 1,971-line setup.sh + 2,000 lines JS → single Rust crate.**
 
 ## Architecture
 
@@ -116,17 +116,18 @@ crux knowledge "query"   # CLI mode: search knowledge
 
 ### Checklist — Phase 1
 
-- [ ] 1.1 `cargo init crux` with workspace layout
-- [ ] 1.2 Define `SessionState` struct with serde derive (mirrors Python dataclass)
-- [ ] 1.3 Define `MemoryEntry` struct
+- [x] 1.1 `cargo init crux` — Cargo.toml with rmcp, tokio, clap, serde, schemars, chrono, uuid, walkdir, regex, anyhow
+- [x] 1.2 `session.rs` — SessionState with serde, save/load/update/auto_handoff/write_handoff/read_handoff + 7 tests
+- [x] 1.3 `memory.rs` — MemoryEntry with uuid + chrono
 - [ ] 1.4 Define `ServerConfig` struct (MCP registry)
 - [ ] 1.5 Define `ToolRecipe` struct (6 tools)
 - [ ] 1.6 Define `RankedFile` struct (impact analysis)
-- [ ] 1.7 `paths.rs` — `crux_dir()`, `home_dir()`, `project_dir()` resolution
-- [ ] 1.8 `security.rs` — path validation, safe joins, atomic writes
-- [ ] 1.9 `init.rs` — `init_project()`, `init_user()` creating .crux/ structure
-- [ ] 1.10 Tests for all types (serialization roundtrip, path resolution, init idempotency)
-- [ ] 1.11 `cargo build` produces a binary, `cargo test` passes
+- [x] 1.7 `paths.rs` — project_crux_dir, user_crux_dir, project_dir + 2 tests
+- [x] 1.8 `security.rs` — atomic_write, is_safe_path + 3 tests
+- [ ] 1.9 `init.rs` — init_project(), init_user() (stub)
+- [x] 1.10 13 tests passing (session roundtrip, path resolution, security, handoff)
+- [x] 1.11 `cargo build` produces 4.6MB binary, `cargo test` — 13 passed, 0 failed
+- [x] 1.12 CLI scaffold: clap derive with all subcommands (status, switch, health, knowledge, impact, digest, mcp, setup, version)
 
 ---
 
