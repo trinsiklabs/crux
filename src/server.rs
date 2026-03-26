@@ -161,18 +161,77 @@ impl CruxServer {
         session::update_session(&self.crux_dir(), None, None, None, None, None);
         let state = session::load_session(&self.crux_dir());
         let handoff = session::read_handoff(&self.crux_dir());
+
+        // Return plain text — not JSON. The model sees this directly
+        // without having to parse nested JSON structures.
         let mut parts = vec![
-            format!("Mode: {}", state.active_mode),
-            format!("Tool: {}", state.active_tool),
+            "# Session Context Restored".to_string(),
+            String::new(),
+            format!("**Mode:** {}", state.active_mode),
+            format!("**Tool:** {}", if state.active_tool.is_empty() { "not set" } else { &state.active_tool }),
         ];
+
         if !state.working_on.is_empty() {
-            parts.push(format!("Working on: {}", state.working_on));
+            parts.push(format!("**Working on:** {}", state.working_on));
         }
+
+        // Key decisions (last 10, filtered)
+        let clean: Vec<&str> = state.key_decisions.iter()
+            .filter(|d| !d.starts_with("$(") && d.len() < 300)
+            .map(|s| s.as_str())
+            .collect();
+        if !clean.is_empty() {
+            parts.push(String::new());
+            parts.push("## Key Decisions".into());
+            for d in clean.iter().rev().take(10).rev() {
+                parts.push(format!("- {d}"));
+            }
+        }
+
+        // Pending tasks
+        if !state.pending.is_empty() {
+            parts.push(String::new());
+            parts.push("## Pending Tasks".into());
+            for p in &state.pending {
+                parts.push(format!("- {p}"));
+            }
+        }
+
+        // Files touched (last 20, deduped)
+        if !state.files_touched.is_empty() {
+            let mut seen = std::collections::HashSet::new();
+            let unique: Vec<&str> = state.files_touched.iter()
+                .filter(|f| {
+                    let base = std::path::Path::new(f.as_str()).file_name()
+                        .unwrap_or_default().to_string_lossy().to_string();
+                    seen.insert(base)
+                })
+                .map(|s| s.as_str())
+                .collect();
+            if !unique.is_empty() {
+                parts.push(String::new());
+                parts.push(format!("## Files Touched ({} unique)", unique.len()));
+                for f in unique.iter().rev().take(20).rev() {
+                    parts.push(format!("- {f}"));
+                }
+            }
+        }
+
+        // Handoff from previous session
         if let Some(h) = handoff {
-            parts.push(format!("Handoff:\n{h}"));
+            parts.push(String::new());
+            parts.push("## Handoff from Previous Session".into());
+            parts.push(h);
         }
-        serde_json::to_string(&serde_json::json!({"context": parts.join("\n")}))
-            .unwrap_or_default()
+
+        // Context summary
+        if !state.context_summary.is_empty() {
+            parts.push(String::new());
+            parts.push("## Context Summary".into());
+            parts.push(state.context_summary);
+        }
+
+        parts.join("\n")
     }
 
     /// Write handoff context for the next session.
