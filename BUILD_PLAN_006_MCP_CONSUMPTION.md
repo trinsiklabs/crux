@@ -1,7 +1,7 @@
 # BUILD_PLAN_006: MCP Server Consumption — Connect to External MCP Servers
 
 **Created:** 2026-03-26
-**Status:** NOT STARTED
+**Status:** PHASES 0-1 COMPLETE (registry + security). Phases 2-3 (connection + proxying) deferred — requires MCP client SDK, better suited to CruxCLI-side implementation.
 **Priority:** MUST-CLOSE
 **Competitive Gap:** Cursor, Windsurf, Roo Code can connect to external MCP servers. Crux exposes MCP but doesn't consume others.
 **Goal:** Crux MCP server acts as a proxy/aggregator — it can connect to external MCP servers and expose their tools alongside its own 43 tools. Any tool connected to Crux automatically gets access to all registered MCP servers.
@@ -46,14 +46,23 @@ Claude Code / CruxCLI / Cursor
 
 ---
 
+## Phase 0: Security Model
+
+- [x] 0.1 External servers require explicit user registration (no auto-discovery)
+- [x] 0.2 Tool allowlist: registry includes `allowed_tools` filter per server (default: all)
+- [x] 0.3 No credential forwarding: _FORBIDDEN_ENV_KEYS strips CRUX_HOME/PROJECT/etc
+- [x] 0.4 Timeout enforcement: configurable per-server (default 30s)
+
+---
+
 ## Phase 1: External Server Registry
 
-- [ ] 1.1 Create `scripts/lib/crux_mcp_registry.py` with `ServerConfig` dataclass
-- [ ] 1.2 `load_registry(crux_dir)` → reads `.crux/mcp-servers.json`
-- [ ] 1.3 `save_registry(crux_dir, servers)` → writes config
-- [ ] 1.4 MCP tool: `register_mcp_server(name, command, env)` — add server to registry
-- [ ] 1.5 MCP tool: `list_mcp_servers()` — list registered servers with status
-- [ ] 1.6 Tests for registry CRUD
+- [x] 1.1 Created `scripts/lib/crux_mcp_registry.py` with ServerConfig dataclass
+- [x] 1.2 `load_registry(crux_dir)` reads `.crux/mcp-servers.json`
+- [x] 1.3 `save_registry(crux_dir, servers)` writes config
+- [x] 1.4 MCP tools: `register_mcp_server`, `remove_mcp_server`, `list_mcp_servers` (3 new tools, total 46)
+- [x] 1.5 15 tests, 100% coverage on crux_mcp_registry.py
+- [x] 1.6 Full suite: 1428 passing
 
 ## Phase 2: Server Connection Manager
 

@@ -633,6 +633,60 @@ def analyze_impact(
     }
 
 
+# ---------------------------------------------------------------------------
+# External MCP server registry
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def register_mcp_server(
+    name: str,
+    command: str,
+    env: str = "{}",
+    allowed_tools: str = "",
+    timeout: int = 30,
+) -> dict:
+    """Register an external MCP server for aggregation.
+
+    Configure external MCP servers once in Crux, and every connected tool
+    gets access to them. Servers require explicit registration (no auto-discovery).
+
+    Args:
+        name: Server identifier (e.g., 'github', 'postgres').
+        command: JSON array of command + args (e.g., '["github-mcp-server"]').
+        env: JSON object of environment variables (e.g., '{"TOKEN": "xxx"}').
+        allowed_tools: Comma-separated tool allowlist (empty = all tools).
+        timeout: Timeout in seconds (default 30).
+    """
+    import json as _json
+    from scripts.lib.crux_mcp_registry import register_server
+    cmd = _json.loads(command) if command.startswith("[") else [command]
+    env_dict = _json.loads(env) if env.startswith("{") else {}
+    tools_list = [t.strip() for t in allowed_tools.split(",") if t.strip()] or None
+    return register_server(
+        os.path.join(_project(), ".crux"),
+        name=name, command=cmd, env=env_dict,
+        allowed_tools=tools_list, timeout=timeout,
+    )
+
+
+@mcp.tool()
+def remove_mcp_server(name: str) -> dict:
+    """Remove an external MCP server from the registry.
+
+    Args:
+        name: Server identifier to remove.
+    """
+    from scripts.lib.crux_mcp_registry import remove_server
+    return remove_server(os.path.join(_project(), ".crux"), name)
+
+
+@mcp.tool()
+def list_mcp_servers() -> dict:
+    """List all registered external MCP servers with their status."""
+    from scripts.lib.crux_mcp_registry import list_servers
+    return list_servers(os.path.join(_project(), ".crux"))
+
+
 async def run():  # pragma: no cover — starts blocking stdio server
     """Run the MCP server on stdio transport."""
     await mcp.run_stdio_async()

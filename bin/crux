@@ -378,6 +378,184 @@ print('Use the bip_generate MCP tool in your AI session to generate and approve 
 ###############################################################################
 # crux version
 ###############################################################################
+# crux knowledge — search knowledge entries
+###############################################################################
+cmd_knowledge() {
+    local query="${1:-""}"
+    local project_dir="${CRUX_PROJECT:-$(pwd)}"
+    local home_dir="${CRUX_HOME:-$HOME}"
+
+    if [ -z "$query" ]; then
+        echo "Usage: crux knowledge <query>"
+        echo "Search project and user knowledge entries."
+        exit 1
+    fi
+
+    local python_path
+    python_path="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
+    if [ -z "$python_path" ]; then error "Python not found"; exit 1; fi
+
+    cd "$CRUX_DIR"
+    $python_path -c "
+import sys
+sys.path.insert(0, '.')
+from scripts.lib.crux_mcp_handlers import handle_lookup_knowledge
+
+result = handle_lookup_knowledge(query='$query', mode=None, project_dir='$project_dir', home='$home_dir')
+if result['total_found'] == 0:
+    print('No knowledge entries found.')
+else:
+    print(f'Found {result[\"total_found\"]} entries:\n')
+    for entry in result.get('entries', []):
+        print(f'  [{entry.get(\"scope\",\"?\")}] {entry.get(\"name\",\"\")}')
+        if entry.get('preview'):
+            print(f'         {entry[\"preview\"][:100]}')
+        print()
+"
+}
+
+###############################################################################
+# crux health — run health checks
+###############################################################################
+cmd_health() {
+    local project_dir="${CRUX_PROJECT:-$(pwd)}"
+    local home_dir="${CRUX_HOME:-$HOME}"
+    local python_path
+    python_path="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
+    if [ -z "$python_path" ]; then error "Python not found"; exit 1; fi
+
+    cd "$CRUX_DIR"
+    $python_path -c "
+import sys
+sys.path.insert(0, '.')
+from scripts.lib.crux_status import verify_health
+
+report = verify_health(project_dir='$project_dir', home='$home_dir')
+for label, checks in [('Static', report['static']), ('Liveness', report['liveness'])]:
+    print(f'{label}')
+    for c in checks:
+        mark = '\033[0;32m✓\033[0m' if c['passed'] else '\033[0;31m✗\033[0m'
+        print(f'  {mark} {c[\"name\"]}: {c[\"message\"]}')
+    print()
+
+s = report['summary']
+if s['all_passed']:
+    print(f'\033[0;32m✓\033[0m All {s[\"total\"]} checks passed')
+else:
+    print(f'\033[1;33m⚠\033[0m {s[\"passed\"]}/{s[\"total\"]} checks passed ({s[\"failed\"]} failed)')
+"
+}
+
+###############################################################################
+# crux impact — find relevant files for a task
+###############################################################################
+cmd_impact() {
+    local prompt="${1:-""}"
+    local project_dir="${CRUX_PROJECT:-$(pwd)}"
+    local top_n="${2:-10}"
+
+    if [ -z "$prompt" ]; then
+        echo "Usage: crux impact \"<prompt>\" [top_n]"
+        echo "Find files most relevant to a task description."
+        exit 1
+    fi
+
+    local python_path
+    python_path="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
+    if [ -z "$python_path" ]; then error "Python not found"; exit 1; fi
+
+    cd "$CRUX_DIR"
+    $python_path -c "
+import sys
+sys.path.insert(0, '.')
+from scripts.lib.impact.scorer import rank_files
+
+results = rank_files('$project_dir', '$prompt', top_n=$top_n)
+if not results:
+    print('No relevant files found.')
+else:
+    print(f'Top {len(results)} files for: $prompt\n')
+    for r in results:
+        reasons = ', '.join(f'{k}={v:.2f}' for k, v in r.reasons.items() if v > 0)
+        print(f'  {r.score:.3f}  {r.path}')
+        if reasons:
+            print(f'         {reasons}')
+"
+}
+
+###############################################################################
+# crux digest — show daily digest
+###############################################################################
+cmd_digest() {
+    local project_dir="${CRUX_PROJECT:-$(pwd)}"
+    local home_dir="${CRUX_HOME:-$HOME}"
+    local python_path
+    python_path="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
+    if [ -z "$python_path" ]; then error "Python not found"; exit 1; fi
+
+    cd "$CRUX_DIR"
+    $python_path -c "
+import sys
+sys.path.insert(0, '.')
+from scripts.lib.crux_mcp_handlers import handle_get_digest
+
+result = handle_get_digest(project_dir='$project_dir', home='$home_dir')
+if result.get('found'):
+    print(result.get('content', 'No content'))
+else:
+    print('No digest available for today.')
+"
+}
+
+###############################################################################
+# crux mcp — MCP server management
+###############################################################################
+cmd_mcp() {
+    local subcmd="${1:-status}"
+    local project_dir="${CRUX_PROJECT:-$(pwd)}"
+    local python_path
+    python_path="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
+    if [ -z "$python_path" ]; then error "Python not found"; exit 1; fi
+
+    cd "$CRUX_DIR"
+
+    case "$subcmd" in
+        start)
+            info "Starting Crux MCP server (stdio)..."
+            exec $python_path -m scripts.lib.crux_mcp_server
+            ;;
+        status)
+            $python_path -c "
+import sys
+sys.path.insert(0, '.')
+from scripts.lib.crux_mcp_server import mcp
+tools = mcp._tool_manager._tools
+print(f'Crux MCP Server: {len(tools)} tools registered')
+print(f'Server name: {mcp.name}')
+print()
+for name in sorted(tools.keys()):
+    desc = tools[name].description
+    first_line = desc.split(chr(10))[0] if desc else ''
+    print(f'  {name}: {first_line[:70]}')
+"
+            ;;
+        tools)
+            $python_path -c "
+import sys
+sys.path.insert(0, '.')
+from scripts.lib.crux_mcp_server import mcp
+tools = mcp._tool_manager._tools
+for name in sorted(tools.keys()):
+    print(name)
+"
+            ;;
+        *)
+            echo "Usage: crux mcp [start|status|tools]"
+            ;;
+    esac
+}
+
+###############################################################################
 cmd_version() {
     echo "crux $VERSION"
     if [ -d "$CRUX_DIR/.git" ]; then
@@ -398,6 +576,11 @@ ${BOLD}Usage:${NC}
 ${BOLD}Commands:${NC}
   status      Show runtime status and run all health + liveness checks
   switch      Switch to a different AI tool (generates configs, updates session)
+  knowledge   Search project and user knowledge entries
+  health      Run health checks (static + liveness)
+  impact      Find files most relevant to a task description
+  digest      Show daily digest
+  mcp         MCP server management (start, status, tools)
   bip         Build-in-public: check triggers, gather content, show status
   setup       Run the interactive setup wizard
   update      Pull latest changes and refresh installation
@@ -415,8 +598,22 @@ ${BOLD}Setup Options:${NC}
   crux setup              Full interactive setup
   crux setup --update     Non-interactive refresh (symlinks, scripts)
 
+${BOLD}Knowledge:${NC}
+  crux knowledge auth     Search for 'auth' in knowledge entries
+  crux knowledge "JWT"    Find knowledge about JWT patterns
+
+${BOLD}Impact Analysis:${NC}
+  crux impact "add OAuth2"     Find files relevant to adding OAuth2
+  crux impact "fix TUI bug" 5  Show top 5 files for TUI bug fix
+
+${BOLD}MCP Server:${NC}
+  crux mcp start          Start MCP server on stdio (for tool integration)
+  crux mcp status         Show registered tools and server info
+  crux mcp tools          List all tool names
+
 ${BOLD}Note:${NC}
-  Knowledge ingestion moved to key-ops: use 'onelist-ingest' instead of 'crux ingest'
+  The crux CLI is a management tool (no LLM). For AI-assisted coding,
+  use CruxCLI (cruxcli) or Claude Code with Crux MCP server connected.
 
 ${BOLD}Build-in-Public:${NC}
   crux bip                Check triggers and show gathered material
@@ -448,13 +645,18 @@ case "${1:-help}" in
         info "Use 'onelist-ingest' instead (PLAN-372)"
         exit 1
         ;;
-    status)  cmd_status ;;
-    switch)  shift; cmd_switch "$@" ;;
-    bip)     shift; cmd_bip "$@" ;;
-    setup)   shift; cmd_setup "$@" ;;
-    update)  shift; cmd_update "$@" ;;
-    doctor)  cmd_doctor ;;
-    version) cmd_version ;;
+    status)     cmd_status ;;
+    switch)     shift; cmd_switch "$@" ;;
+    bip)        shift; cmd_bip "$@" ;;
+    knowledge)  shift; cmd_knowledge "$@" ;;
+    health)     cmd_health ;;
+    impact)     shift; cmd_impact "$@" ;;
+    digest)     cmd_digest ;;
+    mcp)        shift; cmd_mcp "$@" ;;
+    setup)      shift; cmd_setup "$@" ;;
+    update)     shift; cmd_update "$@" ;;
+    doctor)     cmd_doctor ;;
+    version)    cmd_version ;;
     help|--help|-h) cmd_help ;;
     *)
         error "Unknown command: $1"
