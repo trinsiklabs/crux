@@ -1,7 +1,7 @@
 # BUILD_PLAN_008: Repo Map — AST-Based File Ranking
 
 **Created:** 2026-03-26
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **Priority:** SHOULD-CLOSE
 **Competitive Gap:** Aider's repo map proactively selects relevant files using AST analysis. Crux has analyze_impact (git+grep+LSP stubs) but no AST parsing.
 **Goal:** Enhance `analyze_impact` with real AST-based symbol extraction — parse import graphs, function definitions, and class hierarchies to rank files by structural relevance to a prompt. No LSP required.

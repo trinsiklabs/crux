@@ -8,12 +8,14 @@ from dataclasses import dataclass, field
 from scripts.lib.impact.git_signals import churn, recency
 from scripts.lib.impact.keywords import extract_keywords, grep_matches
 from scripts.lib.impact.lsp_signals import symbol_matches
+from scripts.lib.impact.ast_signals import symbol_relevance as ast_relevance
 
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "keyword": 0.3,
-    "churn": 0.2,
-    "symbol": 0.3,
-    "proximity": 0.2,
+    "keyword": 0.25,
+    "churn": 0.15,
+    "ast": 0.25,
+    "symbol": 0.15,
+    "proximity": 0.20,
 }
 
 
@@ -104,11 +106,13 @@ def rank_files(
     kw_raw = grep_matches(root, keywords)
     churn_raw = churn(root)
     sym_raw = symbol_matches(root, keywords)
+    ast_raw = ast_relevance(root, keywords)
 
     # Normalize each dimension to 0-1
     kw_norm = _normalize(kw_raw)
     churn_norm = _normalize({k: float(v) for k, v in churn_raw.items()})
     sym_norm = _normalize(sym_raw)
+    ast_norm = _normalize(ast_raw)
     prox_raw = _proximity_scores(kw_norm, root)
     prox_norm = _normalize(prox_raw)
 
@@ -117,6 +121,7 @@ def rank_files(
     all_files.update(kw_norm)
     all_files.update(churn_norm)
     all_files.update(sym_norm)
+    all_files.update(ast_norm)
     all_files.update(prox_norm)
 
     if not all_files:
@@ -128,12 +133,14 @@ def rank_files(
         kw_s = kw_norm.get(fp, 0.0)
         ch_s = churn_norm.get(fp, 0.0)
         sy_s = sym_norm.get(fp, 0.0)
+        as_s = ast_norm.get(fp, 0.0)
         pr_s = prox_norm.get(fp, 0.0)
 
         score = (
             w.get("keyword", 0) * kw_s
             + w.get("churn", 0) * ch_s
             + w.get("symbol", 0) * sy_s
+            + w.get("ast", 0) * as_s
             + w.get("proximity", 0) * pr_s
         )
 
@@ -142,6 +149,7 @@ def rank_files(
             reasons = {
                 "keyword": round(kw_s, 4),
                 "churn": round(ch_s, 4),
+                "ast": round(as_s, 4),
                 "symbol": round(sy_s, 4),
                 "proximity": round(pr_s, 4),
             }
