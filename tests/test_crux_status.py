@@ -202,7 +202,7 @@ class TestGetStatus:
 
         result = get_status(project_dir=env["project"], home=env["home"])
         assert result["mcp"]["registered"] is True
-        assert result["mcp"]["tool_count"] == 46
+        assert result["mcp"]["tool_count"] == 50
 
     def test_mcp_not_registered_when_no_config(self, env):
         from scripts.lib.crux_status import get_status

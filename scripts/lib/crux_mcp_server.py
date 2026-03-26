@@ -634,6 +634,73 @@ def analyze_impact(
 
 
 # ---------------------------------------------------------------------------
+# Memory system
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def remember_fact(fact: str, scope: str = "project") -> dict:
+    """Remember a fact for future sessions.
+
+    Facts persist across sessions and tool switches. They are stored in
+    .crux/memory/ (project scope) or ~/.crux/memory/ (user scope).
+
+    Args:
+        fact: The fact to remember (e.g., "this project uses PostgreSQL 15").
+        scope: 'project' (default) or 'user' (cross-project).
+    """
+    from scripts.lib.crux_memory import remember
+    crux_dir = os.path.join(_project(), ".crux") if scope == "project" else os.path.join(_home(), ".crux")
+    return remember(fact, scope, crux_dir)
+
+
+@mcp.tool()
+def recall_memories(query: str, scope: str = "project") -> dict:
+    """Search memories by keyword.
+
+    Args:
+        query: Search term to match against stored facts.
+        scope: 'project' or 'user'.
+    """
+    from scripts.lib.crux_memory import recall
+    crux_dir = os.path.join(_project(), ".crux") if scope == "project" else os.path.join(_home(), ".crux")
+    return recall(query, scope, crux_dir)
+
+
+@mcp.tool()
+def forget_fact(memory_id: str, scope: str = "project") -> dict:
+    """Forget a memory by its ID.
+
+    Args:
+        memory_id: ID of the memory to remove.
+        scope: 'project' or 'user'.
+    """
+    from scripts.lib.crux_memory import forget_memory
+    crux_dir = os.path.join(_project(), ".crux") if scope == "project" else os.path.join(_home(), ".crux")
+    return forget_memory(memory_id, scope, crux_dir)
+
+
+@mcp.tool()
+def list_all_memories(scope: str = "project") -> dict:
+    """List all stored memories.
+
+    Args:
+        scope: 'project' or 'user'.
+    """
+    from scripts.lib.crux_memory import load_memories
+    crux_dir = os.path.join(_project(), ".crux") if scope == "project" else os.path.join(_home(), ".crux")
+    entries = load_memories(scope, crux_dir)
+    return {
+        "memories": [
+            {"id": e.id, "fact": e.fact, "confidence": e.confidence,
+             "use_count": e.use_count, "source": e.source}
+            for e in entries
+        ],
+        "total": len(entries),
+        "scope": scope,
+    }
+
+
+# ---------------------------------------------------------------------------
 # External MCP server registry
 # ---------------------------------------------------------------------------
 

@@ -1,7 +1,7 @@
 # BUILD_PLAN_009: Cross-Session Memory System
 
 **Created:** 2026-03-26
-**Status:** NOT STARTED
+**Status:** PHASES 1+3 COMPLETE (storage + MCP tools). Phase 2 (auto-capture) and Phase 4 (promotion/decay) deferred.
 **Priority:** SHOULD-CLOSE
 **Competitive Gap:** Claude Code has a memory system (~/.claude/memory/) that persists facts across sessions. Crux has knowledge entries but no structured memory that accumulates automatically.
 **Goal:** Build a memory system in `.crux/memory/` that automatically captures and retrieves project-specific and user-level facts. Works across all tools — not just Claude Code.
