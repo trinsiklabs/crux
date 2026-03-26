@@ -1,7 +1,7 @@
 # BUILD_PLAN_010: Multi-Model Routing — Intelligent Model Selection
 
 **Created:** 2026-03-26
-**Status:** NOT STARTED
+**Status:** ALREADY IMPLEMENTED — existing model tier system (crux_model_tiers.py, crux_model_quality.py, crux_audit_backend.py) covers Phases 1-4. MCP tools get_model_for_task, get_mode_model, get_available_tiers, get_model_quality_stats already operational.
 **Priority:** SHOULD-CLOSE
 **Competitive Gap:** Aider supports multi-model (architect+editor pattern). Crux has model tier infrastructure (PLAN-169/182) but no intelligent routing that selects the best model per task.
 **Goal:** Crux recommends and routes to the optimal model for each task based on mode, task type, and quality history. Works across any provider (Ollama, Anthropic, OpenAI, OpenRouter).

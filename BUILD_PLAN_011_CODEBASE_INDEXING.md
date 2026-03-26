@@ -1,7 +1,7 @@
 # BUILD_PLAN_011: Codebase Indexing — Persistent Semantic Code Understanding
 
 **Created:** 2026-03-26
-**Status:** NOT STARTED
+**Status:** COMPLETE — crux_index.py with catalog, symbol extraction (Python/TS/JS/Elixir), search, persistence. MCP tools: search_code, index_codebase. 28 tests, 100% coverage.
 **Priority:** SHOULD-CLOSE
 **Competitive Gap:** Cursor indexes entire codebases for semantic search and chat. Crux relies on grep (text matching) and git history — no persistent index of code structure.
 **Goal:** Build a persistent codebase index in `.crux/index/` that maps files, symbols, imports, and documentation. Updated incrementally on file changes. Powers fast semantic search and context selection.

@@ -701,6 +701,91 @@ def list_all_memories(scope: str = "project") -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Git context
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def git_context(filepath: str) -> dict:
+    """Get git context for a file — recent history, risk score.
+
+    Helps the AI make better edits by understanding version history.
+
+    Args:
+        filepath: Path to the file (relative to project root).
+    """
+    from scripts.lib.crux_git_context import get_file_history, get_risky_files
+    history = get_file_history(_project(), filepath, n=5)
+    risky = get_risky_files(_project(), top_n=20)
+    risk = next((r for r in risky if r["file"] == filepath), None)
+    return {
+        "file": filepath,
+        "recent_commits": history,
+        "risk": risk,
+    }
+
+
+@mcp.tool()
+def git_diff() -> dict:
+    """Get current uncommitted changes (staged + unstaged)."""
+    from scripts.lib.crux_git_context import get_current_diff, get_branch_context
+    diff = get_current_diff(_project())
+    branch = get_branch_context(_project())
+    return {"diff": diff, "branch": branch}
+
+
+@mcp.tool()
+def git_risky_files(top_n: int = 10) -> dict:
+    """Find files with highest churn — most likely to cause issues if edited.
+
+    Args:
+        top_n: Number of files to return (default 10).
+    """
+    from scripts.lib.crux_git_context import get_risky_files
+    return {"files": get_risky_files(_project(), top_n=top_n)}
+
+
+@mcp.tool()
+def git_suggest_commit() -> dict:
+    """Suggest a commit message from currently staged changes."""
+    from scripts.lib.crux_git_context import suggest_commit_message
+    msg = suggest_commit_message(_project())
+    return {"message": msg, "has_staged": bool(msg)}
+
+
+# ---------------------------------------------------------------------------
+# Codebase indexing
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def search_code(query: str) -> dict:
+    """Search the codebase for files and symbols matching a query.
+
+    Searches file paths, function/class/constant names, and module names.
+    Returns ranked results with file, symbol, and line number.
+
+    Args:
+        query: Search term (e.g., 'AuthService', 'login', 'database').
+    """
+    from scripts.lib.crux_index import search_index
+    results = search_index(query, _project())
+    return {"results": results[:20], "total": len(results), "query": query}
+
+
+@mcp.tool()
+def index_codebase() -> dict:
+    """Build or refresh the codebase index.
+
+    Scans all source files, extracts symbols (functions, classes, constants),
+    and persists the index for fast search.
+    """
+    from scripts.lib.crux_index import build_catalog, save_index, index_stats
+    catalog = build_catalog(_project())
+    crux_dir = os.path.join(_project(), ".crux")
+    save_index(catalog, crux_dir)
+    return index_stats(_project())
+
+
+# ---------------------------------------------------------------------------
 # External MCP server registry
 # ---------------------------------------------------------------------------
 

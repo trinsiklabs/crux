@@ -1,7 +1,7 @@
 # BUILD_PLAN_012: Git-Aware Editing — Context from Version History
 
 **Created:** 2026-03-26
-**Status:** NOT STARTED
+**Status:** COMPLETE — crux_git_context.py with diff, file history, branch context, commit suggestions, risk assessment. MCP tools: git_context, git_diff, git_risky_files, git_suggest_commit. 24 tests, 100% coverage.
 **Priority:** SHOULD-CLOSE
 **Competitive Gap:** Aider's git integration understands diffs, auto-commits with meaningful messages, and uses git context for better edits. Crux captures git commits as decisions but doesn't use git context to improve editing.
 **Goal:** Crux provides git-aware context to any connected tool — current diff, recent changes to a file, blame info, branch context — so the AI makes better edits informed by version history.
