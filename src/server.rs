@@ -103,7 +103,16 @@ impl CruxServer {
         }
     }
 
-    fn crux_dir(&self) -> PathBuf {
+    /// Create a server with explicit directories (for testing).
+    pub fn with_dirs(project_dir: PathBuf, home_dir: PathBuf) -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+            project_dir,
+            home_dir,
+        }
+    }
+
+    pub fn crux_dir(&self) -> PathBuf {
         self.project_dir.join(".crux")
     }
 }
@@ -126,7 +135,7 @@ impl ServerHandler for CruxServer {
 impl CruxServer {
     /// Get the current Crux session state.
     #[tool(description = "Get the current session state (active mode, tool, working context).")]
-    async fn get_session_state(&self, _params: Parameters<()>) -> String {
+    async fn get_session_state(&self) -> String {
         let state = session::load_session(&self.crux_dir());
         serde_json::to_string_pretty(&state).unwrap_or_default()
     }
@@ -148,7 +157,7 @@ impl CruxServer {
 
     /// Restore full session context after a restart or tool switch.
     #[tool(description = "Restore session context. Call at the start of every new session.")]
-    async fn restore_context(&self, _params: Parameters<()>) -> String {
+    async fn restore_context(&self) -> String {
         session::update_session(&self.crux_dir(), None, None, None, None, None);
         let state = session::load_session(&self.crux_dir());
         let handoff = session::read_handoff(&self.crux_dir());
@@ -175,7 +184,7 @@ impl CruxServer {
 
     /// Read handoff context from previous session.
     #[tool(description = "Read handoff context left by a previous session.")]
-    async fn read_handoff(&self, _params: Parameters<()>) -> String {
+    async fn read_handoff(&self) -> String {
         match session::read_handoff(&self.crux_dir()) {
             Some(c) => serde_json::to_string(&serde_json::json!({"exists": true, "content": c}))
                 .unwrap_or_default(),
@@ -257,7 +266,7 @@ impl CruxServer {
 
     /// Get current uncommitted changes.
     #[tool(description = "Get current uncommitted changes.")]
-    async fn git_diff(&self, _params: Parameters<()>) -> String {
+    async fn git_diff(&self) -> String {
         let diff = git_context::current_diff(&self.project_dir);
         let branch = git_context::branch_context(&self.project_dir);
         serde_json::to_string(&serde_json::json!({
@@ -277,7 +286,7 @@ impl CruxServer {
 
     /// Suggest commit message.
     #[tool(description = "Suggest a commit message from staged changes.")]
-    async fn git_suggest_commit(&self, _params: Parameters<()>) -> String {
+    async fn git_suggest_commit(&self) -> String {
         let msg = git_context::suggest_commit(&self.project_dir);
         serde_json::to_string(&serde_json::json!({
             "message": msg, "has_staged": !msg.is_empty(),
@@ -299,7 +308,7 @@ impl CruxServer {
 
     /// List all available modes.
     #[tool(description = "List all available Crux modes with descriptions.")]
-    async fn list_modes(&self, _params: Parameters<()>) -> String {
+    async fn list_modes(&self) -> String {
         let modes_dir = self.home_dir.join(".crux/modes");
         let mut modes = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&modes_dir) {
@@ -325,7 +334,7 @@ impl CruxServer {
 
     /// List all memories.
     #[tool(description = "List all stored memories.")]
-    async fn list_all_memories(&self, _params: Parameters<()>) -> String {
+    async fn list_all_memories(&self) -> String {
         let entries = memory::load_memories("project", &self.crux_dir());
         serde_json::to_string(&serde_json::json!({
             "memories": entries.iter().map(|e| serde_json::json!({
@@ -350,7 +359,7 @@ impl CruxServer {
 
     /// Build or refresh the codebase index.
     #[tool(description = "Build or refresh the codebase index for fast symbol search.")]
-    async fn index_codebase(&self, _params: Parameters<()>) -> String {
+    async fn index_codebase(&self) -> String {
         let catalog = crate::impact::keywords::grep_matches(&self.project_dir, &["".into()]);
         serde_json::to_string(&serde_json::json!({
             "indexed": true,
@@ -447,7 +456,7 @@ impl CruxServer {
 
     /// List registered MCP servers.
     #[tool(description = "List all registered external MCP servers.")]
-    async fn list_mcp_servers(&self, _params: Parameters<()>) -> String {
+    async fn list_mcp_servers(&self) -> String {
         let servers = crate::registry::list_servers(&self.crux_dir());
         serde_json::to_string(&serde_json::json!({
             "servers": servers.iter().map(|s| serde_json::json!({"name": s.name, "enabled": s.enabled})).collect::<Vec<_>>(),
@@ -459,7 +468,7 @@ impl CruxServer {
 
     /// Run all health checks.
     #[tool(description = "Run all health checks and return a combined report.")]
-    async fn verify_health(&self, _params: Parameters<()>) -> String {
+    async fn verify_health(&self) -> String {
         let crux = self.crux_dir();
         let checks = vec![
             ("crux_dir_exists", crux.exists()),
@@ -476,7 +485,7 @@ impl CruxServer {
 
     /// Get project context.
     #[tool(description = "Read the PROJECT.md context file.")]
-    async fn get_project_context(&self, _params: Parameters<()>) -> String {
+    async fn get_project_context(&self) -> String {
         let path = self.crux_dir().join("context/PROJECT.md");
         match std::fs::read_to_string(&path) {
             Ok(content) => serde_json::to_string(&serde_json::json!({"found": true, "content": content})).unwrap_or_default(),
@@ -486,7 +495,7 @@ impl CruxServer {
 
     /// Get daily digest.
     #[tool(description = "Retrieve a daily digest.")]
-    async fn get_digest(&self, _params: Parameters<()>) -> String {
+    async fn get_digest(&self) -> String {
         let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
         let path = self.crux_dir().join(format!("analytics/digests/{date}.md"));
         match std::fs::read_to_string(&path) {
@@ -509,7 +518,7 @@ impl CruxServer {
 
     /// Check triggers and gather content for a BIP draft.
     #[tool(description = "Check triggers and gather content for a build-in-public draft.")]
-    async fn bip_generate(&self, _params: Parameters<()>) -> String {
+    async fn bip_generate(&self) -> String {
         // Read BIP state
         let state_path = self.crux_dir().join("bip/state.json");
         let state: serde_json::Value = std::fs::read_to_string(&state_path)
@@ -534,7 +543,7 @@ impl CruxServer {
 
     /// Get BIP status.
     #[tool(description = "Get current build-in-public state — counters, cooldown, recent posts.")]
-    async fn bip_status(&self, _params: Parameters<()>) -> String {
+    async fn bip_status(&self) -> String {
         let state_path = self.crux_dir().join("bip/state.json");
         let state: serde_json::Value = std::fs::read_to_string(&state_path)
             .ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(serde_json::json!({}));
@@ -543,7 +552,7 @@ impl CruxServer {
 
     /// Get BIP analytics.
     #[tool(description = "Get BIP engagement analytics.")]
-    async fn bip_get_analytics(&self, _params: Parameters<()>) -> String {
+    async fn bip_get_analytics(&self) -> String {
         r#"{"analytics": "not yet connected to Typefully API in Rust binary"}"#.into()
     }
 
@@ -564,7 +573,7 @@ impl CruxServer {
 
     /// Show available model tiers.
     #[tool(description = "Show what model is available at each tier.")]
-    async fn get_available_tiers(&self, _params: Parameters<()>) -> String {
+    async fn get_available_tiers(&self) -> String {
         serde_json::to_string(&serde_json::json!({
             "tiers": {
                 "micro": "qwen3:8b",
@@ -590,7 +599,7 @@ impl CruxServer {
 
     /// Get model quality stats.
     #[tool(description = "Get model quality statistics — success rates per task type and tier.")]
-    async fn get_model_quality_stats(&self, _params: Parameters<()>) -> String {
+    async fn get_model_quality_stats(&self) -> String {
         let stats_path = self.crux_dir().join("analytics/model_quality.json");
         match std::fs::read_to_string(&stats_path) {
             Ok(content) => content,
@@ -617,7 +626,7 @@ impl CruxServer {
 
     /// Check TDD status.
     #[tool(description = "Check the current status of the TDD enforcement gate.")]
-    async fn check_tdd_status(&self, _params: Parameters<()>) -> String {
+    async fn check_tdd_status(&self) -> String {
         let tdd_path = self.crux_dir().join("tdd/state.json");
         match std::fs::read_to_string(&tdd_path) {
             Ok(content) => content,
@@ -629,7 +638,7 @@ impl CruxServer {
 
     /// Start security audit.
     #[tool(description = "Start a recursive security audit loop.")]
-    async fn start_security_audit(&self, _params: Parameters<()>) -> String {
+    async fn start_security_audit(&self) -> String {
         let audit_path = self.crux_dir().join("security_audit/state.json");
         let _ = std::fs::create_dir_all(audit_path.parent().unwrap());
         let state = serde_json::json!({
@@ -642,7 +651,7 @@ impl CruxServer {
 
     /// Security audit summary.
     #[tool(description = "Get a summary of the security audit.")]
-    async fn security_audit_summary(&self, _params: Parameters<()>) -> String {
+    async fn security_audit_summary(&self) -> String {
         let audit_path = self.crux_dir().join("security_audit/state.json");
         match std::fs::read_to_string(&audit_path) {
             Ok(content) => content,
@@ -654,13 +663,13 @@ impl CruxServer {
 
     /// Start design validation.
     #[tool(description = "Start the design validation gate (WCAG, brand, handoff checks).")]
-    async fn start_design_validation(&self, _params: Parameters<()>) -> String {
+    async fn start_design_validation(&self) -> String {
         serde_json::to_string(&serde_json::json!({"wcag_level": "AA", "started": true})).unwrap_or_default()
     }
 
     /// Design validation summary.
     #[tool(description = "Get a summary of design validation results.")]
-    async fn design_validation_summary(&self, _params: Parameters<()>) -> String {
+    async fn design_validation_summary(&self) -> String {
         r#"{"status": "pass", "issues": []}"#.into()
     }
 
@@ -705,7 +714,7 @@ impl CruxServer {
 
     /// Register project.
     #[tool(description = "Register the current project for cross-project aggregation.")]
-    async fn register_project(&self, _params: Parameters<()>) -> String {
+    async fn register_project(&self) -> String {
         let registry_path = self.home_dir.join(".crux/projects/registry.json");
         let _ = std::fs::create_dir_all(registry_path.parent().unwrap());
         let mut registry: serde_json::Value = std::fs::read_to_string(&registry_path)
@@ -721,7 +730,7 @@ impl CruxServer {
 
     /// Get cross-project digest.
     #[tool(description = "Generate a digest spanning all registered projects.")]
-    async fn get_cross_project_digest(&self, _params: Parameters<()>) -> String {
+    async fn get_cross_project_digest(&self) -> String {
         let registry_path = self.home_dir.join(".crux/projects/registry.json");
         let registry: serde_json::Value = std::fs::read_to_string(&registry_path)
             .ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(serde_json::json!({"projects": {}}));
@@ -736,7 +745,7 @@ impl CruxServer {
 
     /// Check processor thresholds.
     #[tool(description = "Check which background processing thresholds are exceeded.")]
-    async fn check_processor_thresholds(&self, _params: Parameters<()>) -> String {
+    async fn check_processor_thresholds(&self) -> String {
         serde_json::to_string(&serde_json::json!({
             "corrections_exceeded": false,
             "interactions_exceeded": false,
@@ -746,13 +755,13 @@ impl CruxServer {
 
     /// Run background processors.
     #[tool(description = "Run all due background processors.")]
-    async fn run_background_processors(&self, _params: Parameters<()>) -> String {
+    async fn run_background_processors(&self) -> String {
         r#"{"success": true, "processors_run": []}"#.into()
     }
 
     /// Get processor status.
     #[tool(description = "Get when each background processor last ran.")]
-    async fn get_processor_status(&self, _params: Parameters<()>) -> String {
+    async fn get_processor_status(&self) -> String {
         let state_path = self.crux_dir().join("analytics/processor_state.json");
         match std::fs::read_to_string(&state_path) {
             Ok(content) => content,
@@ -788,7 +797,7 @@ impl CruxServer {
 
     /// Get pipeline configuration.
     #[tool(description = "Get the current pipeline configuration.")]
-    async fn get_pipeline_config(&self, _params: Parameters<()>) -> String {
+    async fn get_pipeline_config(&self) -> String {
         serde_json::to_string(&serde_json::json!({
             "metadata": {"version": "2.0"},
             "gates": pipeline::get_config(RiskLevel::Medium),
