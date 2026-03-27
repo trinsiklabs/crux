@@ -542,10 +542,22 @@ impl CruxServer {
         })).unwrap_or_default()
     }
 
-    /// Get project context.
-    #[tool(description = "Read the PROJECT.md context file.")]
+    /// Get project context — auto-generates if not found or stale.
+    #[tool(description = "Read the PROJECT.md context file. Auto-generates if missing.")]
     async fn get_project_context(&self) -> String {
         let path = self.crux_dir().join("context/PROJECT.md");
+        // Auto-generate if missing or stale (>24h)
+        let should_generate = if path.exists() {
+            std::fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .map(|t| t.elapsed().unwrap_or_default().as_secs() > 86400)
+                .unwrap_or(true)
+        } else {
+            true
+        };
+        if should_generate {
+            let _ = crate::context::write_project_context(&self.project_dir, &self.crux_dir());
+        }
         match std::fs::read_to_string(&path) {
             Ok(content) => serde_json::to_string(&serde_json::json!({"found": true, "content": content})).unwrap_or_default(),
             Err(_) => r#"{"found": false}"#.into(),

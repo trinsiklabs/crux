@@ -53,6 +53,11 @@ enum Commands {
     },
     /// Show or regenerate handoff context
     Handoff,
+    /// Handle Claude Code hook events (called by .claude/settings.local.json)
+    Hook {
+        /// Event name: SessionStart, PostToolUse, UserPromptSubmit, Stop
+        event: String,
+    },
     /// Recover a corrupted Claude Code session
     Recover {
         /// Path to .jsonl file, or session ID
@@ -187,6 +192,117 @@ impl Cli {
                 println!("{content}");
             }
 
+            Some(Commands::Hook { event }) => {
+                // Read JSON from stdin (Claude Code passes hook data via stdin)
+                let input: serde_json::Value = {
+                    let mut buf = String::new();
+                    if std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).is_ok() && !buf.is_empty() {
+                        serde_json::from_str(&buf).unwrap_or(serde_json::json!({}))
+                    } else {
+                        serde_json::json!({})
+                    }
+                };
+
+                match event.as_str() {
+                    "SessionStart" => {
+                        // Inject mode prompt + session state
+                        let state = session::load_session(&crux);
+                        session::update_session(&crux, None, None, None, None, Some("claude-code"));
+
+                        let mut parts = vec![];
+
+                        // Mode prompt
+                        let mode_file = home.join("modes").join(format!("{}.md", state.active_mode));
+                        if let Ok(prompt) = std::fs::read_to_string(&mode_file) {
+                            parts.push(format!("## Active Mode: {}\n{}", state.active_mode, prompt));
+                        }
+
+                        // Session state
+                        parts.push(format!("## Session State"));
+                        parts.push(format!("- Mode: {}", state.active_mode));
+                        parts.push(format!("- Tool: claude-code"));
+                        if !state.working_on.is_empty() {
+                            parts.push(format!("- Working on: {}", state.working_on));
+                        }
+
+                        // Recent decisions
+                        let clean: Vec<&str> = state.key_decisions.iter()
+                            .filter(|d| !d.starts_with("$(") && d.len() < 300)
+                            .map(|s| s.as_str()).collect();
+                        if !clean.is_empty() {
+                            parts.push(format!("\n## Key Decisions (last {})", clean.len().min(5)));
+                            for d in clean.iter().rev().take(5).rev() {
+                                parts.push(format!("- {d}"));
+                            }
+                        }
+
+                        let output = serde_json::json!({"status": "ok", "context": parts.join("\n")});
+                        println!("{}", serde_json::to_string(&output).unwrap_or_default());
+                    }
+
+                    "PostToolUse" => {
+                        let tool_name = input["tool_name"].as_str().unwrap_or("");
+                        let tool_input = &input["tool_input"];
+                        let tool_output = input["tool_output"].as_str().unwrap_or("");
+
+                        crate::hooks::on_tool_result(tool_name, tool_input, tool_output, &crux);
+
+                        let output = serde_json::json!({"status": "ok"});
+                        println!("{}", serde_json::to_string(&output).unwrap_or_default());
+                    }
+
+                    "UserPromptSubmit" => {
+                        let prompt = input["prompt"].as_str().unwrap_or("");
+                        let is_correction = crate::hooks::is_correction(prompt);
+
+                        if is_correction {
+                            // Log correction
+                            let corrections_dir = crux.join("corrections");
+                            let _ = std::fs::create_dir_all(&corrections_dir);
+                            let path = corrections_dir.join("corrections.jsonl");
+                            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                                let entry = serde_json::json!({
+                                    "content": &prompt[..prompt.len().min(500)],
+                                    "timestamp": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                                });
+                                let _ = std::io::Write::write_all(&mut f, format!("{}\n", serde_json::to_string(&entry).unwrap_or_default()).as_bytes());
+                            }
+                        }
+
+                        // Log conversation
+                        let log_dir = crux.join("analytics/conversations");
+                        let _ = std::fs::create_dir_all(&log_dir);
+                        let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+                        let path = log_dir.join(format!("{date}.jsonl"));
+                        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                            let state = session::load_session(&crux);
+                            let entry = serde_json::json!({
+                                "role": "user",
+                                "content": &prompt[..prompt.len().min(2000)],
+                                "timestamp": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+                                "mode": state.active_mode,
+                                "tool": "claude-code",
+                            });
+                            let _ = std::io::Write::write_all(&mut f, format!("{}\n", serde_json::to_string(&entry).unwrap_or_default()).as_bytes());
+                        }
+
+                        let output = serde_json::json!({"status": "ok", "correction_detected": is_correction});
+                        println!("{}", serde_json::to_string(&output).unwrap_or_default());
+                    }
+
+                    "Stop" => {
+                        crate::hooks::on_stop(&crux);
+                        let output = serde_json::json!({"status": "ok"});
+                        println!("{}", serde_json::to_string(&output).unwrap_or_default());
+                    }
+
+                    other => {
+                        let output = serde_json::json!({"status": "error", "message": format!("Unknown event: {other}")});
+                        println!("{}", serde_json::to_string(&output).unwrap_or_default());
+                    }
+                }
+            }
+
             Some(Commands::Adopt { tool }) => {
                 println!("Adopting project into Crux...\n");
 
@@ -256,6 +372,27 @@ impl Cli {
                         let _ = std::fs::write(knowledge_dir.join("claude-md-import.md"), &content);
                         println!("  CLAUDE.md: imported as knowledge entry");
                     }
+                }
+
+                // Step 6: Generate Claude Code hooks if tool is claude-code
+                if tool == "claude-code" {
+                    let crux_binary = std::env::current_exe().unwrap_or_default().to_string_lossy().to_string();
+                    let claude_dir = project.join(".claude");
+                    let _ = std::fs::create_dir_all(&claude_dir);
+                    let settings = serde_json::json!({
+                        "permissions": {
+                            "allow": ["Bash(cargo:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git push:*)", "Bash(gh pr:*)"]
+                        },
+                        "hooks": {
+                            "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": format!("{crux_binary} hook SessionStart")}]}],
+                            "PostToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": format!("{crux_binary} hook PostToolUse")}]}],
+                            "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": format!("{crux_binary} hook UserPromptSubmit")}]}],
+                            "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": format!("{crux_binary} hook Stop")}]}],
+                        }
+                    });
+                    let settings_path = claude_dir.join("settings.local.json");
+                    let _ = std::fs::write(&settings_path, serde_json::to_string_pretty(&settings).unwrap_or_default());
+                    println!("  Claude Code hooks: written to .claude/settings.local.json");
                 }
 
                 println!("\nAdoption complete. Start {tool} and call restore_context().");

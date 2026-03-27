@@ -1,7 +1,7 @@
 # BUILD_PLAN_015: Complete Rust Feature Parity — Close All 36 Missing Modules
 
 **Created:** 2026-03-27
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Goal:** Port every missing Python module to Rust. Zero stubs. Every MCP tool does real work. The Rust binary is the complete replacement — not a partial port.
 
 **Constraint:** TDD — tests before implementation.
