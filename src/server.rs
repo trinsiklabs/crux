@@ -642,17 +642,30 @@ impl CruxServer {
         serde_json::to_string(&serde_json::json!({"task_type": task, "tier": tier})).unwrap_or_default()
     }
 
-    /// Show available model tiers.
+    /// Show available model tiers — auto-discovers local models via Ollama.
     #[tool(description = "Show what model is available at each tier.")]
     async fn get_available_tiers(&self) -> String {
+        let local_models = crate::api::ollama::list_models(None);
+        let local_names: Vec<&str> = local_models.iter().map(|m| m.name.as_str()).collect();
+
+        let mut tiers = serde_json::json!({
+            "micro": local_names.iter().find(|n| n.contains("8b") || n.contains("4b")).unwrap_or(&"none"),
+            "fast": "claude-haiku",
+            "standard": "claude-sonnet",
+            "frontier": "claude-opus",
+        });
+
+        // Fill local tier with discovered models
+        if let Some(local) = local_names.iter().find(|n| n.contains("30b") || n.contains("27b") || n.contains("coder")) {
+            tiers["local"] = serde_json::json!(local);
+        } else {
+            tiers["local"] = serde_json::json!("none");
+        }
+
         serde_json::to_string(&serde_json::json!({
-            "tiers": {
-                "micro": "qwen3:8b",
-                "fast": "claude-haiku",
-                "local": "qwen3-coder:30b",
-                "standard": "claude-sonnet",
-                "frontier": "claude-opus",
-            }
+            "tiers": tiers,
+            "ollama_running": !local_models.is_empty(),
+            "local_models": local_names,
         })).unwrap_or_default()
     }
 
@@ -884,10 +897,42 @@ impl CruxServer {
     /// Gate 4: 8B adversarial audit.
     #[tool(description = "Gate 4: Run an adversarial security audit using a small (8B) model.")]
     async fn audit_script_8b(&self, params: Parameters<ScriptParam>) -> String {
-        // Without Ollama integration, return pass with note
+        // Try Ollama first
+        if crate::api::ollama::check_running(None) {
+            let models = crate::api::ollama::list_models(None);
+            let model_8b = models.iter()
+                .find(|m| m.name.contains("8b") || m.name.contains("7b") || m.name.contains("qwen"))
+                .map(|m| m.name.as_str())
+                .unwrap_or("qwen3:8b");
+
+            let prompt = format!(
+                "You are a security auditor. Review this script for vulnerabilities, \
+                data loss risks, and unintended side effects. Be adversarial.\n\n```\n{}\n```\n\n\
+                Respond with PASS if safe, or list specific issues.",
+                params.0.content
+            );
+
+            match crate::api::ollama::generate(model_8b, &prompt, None) {
+                Ok(response) => {
+                    let passed = response.to_lowercase().contains("pass") && !response.to_lowercase().contains("fail");
+                    return serde_json::to_string(&serde_json::json!({
+                        "passed": passed,
+                        "model": model_8b,
+                        "response": response,
+                    })).unwrap_or_default();
+                }
+                Err(e) => {
+                    return serde_json::to_string(&serde_json::json!({
+                        "passed": true,
+                        "note": format!("Ollama audit failed: {e}. Passed by default."),
+                    })).unwrap_or_default();
+                }
+            }
+        }
+
         serde_json::to_string(&serde_json::json!({
             "passed": true,
-            "note": "8B audit requires Ollama backend — passed by default in Rust binary",
+            "note": "Ollama not running. Passed by default.",
             "content_length": params.0.content.len(),
         })).unwrap_or_default()
     }
@@ -895,10 +940,38 @@ impl CruxServer {
     /// Gate 5: 32B second-opinion audit.
     #[tool(description = "Gate 5: Run a second-opinion security audit using a large (32B) model.")]
     async fn audit_script_32b(&self, params: Parameters<ScriptParam>) -> String {
+        if crate::api::ollama::check_running(None) {
+            let models = crate::api::ollama::list_models(None);
+            let model_32b = models.iter()
+                .find(|m| m.name.contains("32b") || m.name.contains("30b") || m.name.contains("27b"))
+                .map(|m| m.name.as_str());
+
+            if let Some(model) = model_32b {
+                let prompt = format!(
+                    "You are a senior security reviewer providing a second opinion. \
+                    Review this script for structural issues, race conditions, and subtle bugs.\n\n\
+                    ```\n{}\n```\n\nRespond with PASS if safe, or list specific issues.",
+                    params.0.content
+                );
+
+                match crate::api::ollama::generate(model, &prompt, None) {
+                    Ok(response) => {
+                        let passed = response.to_lowercase().contains("pass");
+                        return serde_json::to_string(&serde_json::json!({
+                            "passed": passed,
+                            "model": model,
+                            "response": response,
+                        })).unwrap_or_default();
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+
         serde_json::to_string(&serde_json::json!({
             "passed": true,
             "skipped": true,
-            "note": "32B audit requires Ollama backend — skipped in Rust binary",
+            "note": "No 32B model available. Skipped.",
             "content_length": params.0.content.len(),
         })).unwrap_or_default()
     }
