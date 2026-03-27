@@ -68,6 +68,36 @@ pub fn generate_project_context(project_dir: &Path) -> String {
     sections.join("\n")
 }
 
+/// Detected project type with recommended mode.
+#[derive(Debug, Clone)]
+pub struct ProjectType {
+    pub language: String,
+    pub mode: String,
+    pub confidence: f64,
+}
+
+/// Detect project type and recommended mode.
+pub fn detect_project_type(dir: &Path) -> Option<ProjectType> {
+    let stack = detect_tech_stack(dir);
+    let primary = stack.first()?;
+    let (mode, confidence) = match primary.as_str() {
+        "Rust" => ("build-py", 0.9),  // No build-rs mode yet, use build-py
+        "Python" => ("build-py", 0.95),
+        "Elixir" => ("build-ex", 0.95),
+        "TypeScript" | "Node.js" => ("build-py", 0.7), // No build-ts mode yet
+        "Go" => ("build-py", 0.6),
+        "Ruby" => ("build-py", 0.6),
+        _ => ("build-py", 0.5),
+    };
+    // Lower confidence if multiple stacks detected (ambiguous)
+    let adj = if stack.len() > 1 { confidence * 0.8 } else { confidence };
+    Some(ProjectType {
+        language: primary.clone(),
+        mode: mode.into(),
+        confidence: adj,
+    })
+}
+
 fn detect_tech_stack(dir: &Path) -> Vec<String> {
     let mut stack = Vec::new();
     if dir.join("Cargo.toml").exists() { stack.push("Rust".into()); }

@@ -27,9 +27,33 @@ pub struct SessionState {
     pub pending: Vec<String>,
     #[serde(default)]
     pub context_summary: String,
+    #[serde(default)]
+    pub session_ttl_hours: Option<u64>,
 }
 
+const DEFAULT_TTL_HOURS: u64 = 24;
+
 impl SessionState {
+    /// Check if this session state is stale (older than TTL).
+    pub fn is_stale(&self) -> bool {
+        if self.updated_at.is_empty() {
+            return true;
+        }
+        let ttl = self.session_ttl_hours.unwrap_or(DEFAULT_TTL_HOURS);
+        if let Ok(updated) = chrono::DateTime::parse_from_rfc3339(&self.updated_at) {
+            let age = chrono::Utc::now().signed_duration_since(updated);
+            age.num_hours() as u64 > ttl
+        } else {
+            // Try the non-RFC3339 format we use (YYYY-MM-DDTHH:MM:SSZ)
+            if let Ok(updated) = chrono::NaiveDateTime::parse_from_str(&self.updated_at, "%Y-%m-%dT%H:%M:%SZ") {
+                let age = chrono::Utc::now().naive_utc().signed_duration_since(updated);
+                age.num_hours() as u64 > ttl
+            } else {
+                true // Can't parse = stale
+            }
+        }
+    }
+
     pub fn new() -> Self {
         let now = now_iso();
         Self {
@@ -266,5 +290,33 @@ mod tests {
     fn read_handoff_nonexistent() {
         let tmp = TempDir::new().unwrap();
         assert!(read_handoff(tmp.path()).is_none());
+    }
+
+    #[test]
+    fn fresh_state_is_not_stale() {
+        let state = SessionState::new();
+        assert!(!state.is_stale());
+    }
+
+    #[test]
+    fn old_state_is_stale() {
+        let mut state = SessionState::new();
+        state.updated_at = "2020-01-01T00:00:00Z".into();
+        assert!(state.is_stale());
+    }
+
+    #[test]
+    fn empty_updated_at_is_stale() {
+        let mut state = SessionState::new();
+        state.updated_at.clear();
+        assert!(state.is_stale());
+    }
+
+    #[test]
+    fn custom_ttl() {
+        let mut state = SessionState::new();
+        state.updated_at = "2020-01-01T00:00:00Z".into();
+        state.session_ttl_hours = Some(1); // 1 hour TTL, state from 2020 = stale
+        assert!(state.is_stale());
     }
 }

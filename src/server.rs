@@ -160,17 +160,39 @@ impl CruxServer {
     #[tool(description = "Restore session context. Call at the start of every new session.")]
     async fn restore_context(&self) -> String {
         session::update_session(&self.crux_dir(), None, None, None, None, None);
-        let state = session::load_session(&self.crux_dir());
+        let mut state = session::load_session(&self.crux_dir());
         let handoff = session::read_handoff(&self.crux_dir());
 
-        // Return plain text — not JSON. The model sees this directly
-        // without having to parse nested JSON structures.
         let mut parts = vec![
             "# Session Context Restored".to_string(),
             String::new(),
-            format!("**Mode:** {}", state.active_mode),
-            format!("**Tool:** {}", if state.active_tool.is_empty() { "not set" } else { &state.active_tool }),
         ];
+
+        // Check staleness
+        if state.is_stale() {
+            parts.push("**WARNING: Session state is stale (>24h old). Starting fresh.**".into());
+            // Archive old state, create new
+            let _ = std::fs::rename(
+                self.crux_dir().join("sessions/state.json"),
+                self.crux_dir().join(format!("sessions/history/{}.json",
+                    chrono::Utc::now().format("%Y-%m-%d-%H%M%S"))),
+            );
+            state = session::SessionState::new();
+            let _ = session::save_session(&state, &self.crux_dir());
+        }
+
+        // Detect project type and check mode match
+        if let Some(project_type) = crate::context::detect_project_type(&self.project_dir) {
+            if state.active_mode != project_type.mode && project_type.confidence > 0.8 {
+                parts.push(format!(
+                    "**Note:** Project is {} but mode is '{}'. Recommended mode: '{}'",
+                    project_type.language, state.active_mode, project_type.mode,
+                ));
+            }
+        }
+
+        parts.push(format!("**Mode:** {}", state.active_mode));
+        parts.push(format!("**Tool:** {}", if state.active_tool.is_empty() { "not set" } else { &state.active_tool }));
 
         if !state.working_on.is_empty() {
             parts.push(format!("**Working on:** {}", state.working_on));
@@ -198,12 +220,20 @@ impl CruxServer {
             }
         }
 
-        // Files touched (last 20, deduped)
+        // Files touched (last 20, deduped, validated to still exist)
         if !state.files_touched.is_empty() {
             let mut seen = std::collections::HashSet::new();
             let unique: Vec<&str> = state.files_touched.iter()
                 .filter(|f| {
-                    let base = std::path::Path::new(f.as_str()).file_name()
+                    // Validate file still exists
+                    let path = std::path::Path::new(f.as_str());
+                    let exists = if path.is_absolute() {
+                        path.exists()
+                    } else {
+                        self.project_dir.join(f).exists()
+                    };
+                    if !exists { return false; }
+                    let base = path.file_name()
                         .unwrap_or_default().to_string_lossy().to_string();
                     seen.insert(base)
                 })
@@ -211,7 +241,7 @@ impl CruxServer {
                 .collect();
             if !unique.is_empty() {
                 parts.push(String::new());
-                parts.push(format!("## Files Touched ({} unique)", unique.len()));
+                parts.push(format!("## Files Touched ({} still exist)", unique.len()));
                 for f in unique.iter().rev().take(20).rev() {
                     parts.push(format!("- {f}"));
                 }
