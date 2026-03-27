@@ -205,8 +205,30 @@ impl Cli {
 
                 match event.as_str() {
                     "SessionStart" => {
-                        // Inject mode prompt + session state
-                        let state = session::load_session(&crux);
+                        let mut state = session::load_session(&crux);
+
+                        // Check staleness — archive old state, start fresh
+                        if state.is_stale() {
+                            let history_dir = crux.join("sessions/history");
+                            let _ = std::fs::create_dir_all(&history_dir);
+                            let _ = std::fs::rename(
+                                crux.join("sessions/state.json"),
+                                history_dir.join(format!("{}.json", chrono::Utc::now().format("%Y-%m-%d-%H%M%S"))),
+                            );
+                            state = session::SessionState::new();
+                        }
+
+                        // Detect project type and check mode match
+                        if let Some(pt) = crate::context::detect_project_type(&project) {
+                            if state.active_mode == "build-py" && pt.mode != "build-py" && pt.confidence > 0.8 {
+                                state.active_mode = pt.mode;
+                            }
+                        }
+
+                        // Clear session-scoped fields on new session start
+                        state.working_on.clear();
+                        state.pending.clear();
+
                         session::update_session(&crux, None, None, None, None, Some("claude-code"));
 
                         let mut parts = vec![];

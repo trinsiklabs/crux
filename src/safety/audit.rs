@@ -29,9 +29,9 @@ static VULNERABILITY_PATTERNS: LazyLock<Vec<(&str, &str, &str, Regex)>> = LazyLo
     vec![
         ("injection", "high", "CWE-78", Regex::new(r"(?i)(os\.system|subprocess\.call|exec\(|eval\()").unwrap()),
         ("path_traversal", "high", "CWE-22", Regex::new(r"(?i)(\.\./|\.\.\\|path\.join.*user)").unwrap()),
-        ("hardcoded_secret", "high", "CWE-798", Regex::new(r#"(?i)(password\s*=\s*["'][^"']+["']|api_key\s*=\s*["'])"#).unwrap()),
-        ("sql_injection", "high", "CWE-89", Regex::new(r#"(?i)(f["'].*SELECT|\.format\(.*SELECT|%s.*SELECT)"#).unwrap()),
-        ("insecure_http", "medium", "CWE-319", Regex::new(r"http://(?!localhost|127\.0\.0\.1)").unwrap()),
+        ("hardcoded_secret", "high", "CWE-798", Regex::new(r#"(?i)(password\s*=\s*['"][^'"]+['"]|api_key\s*=\s*['"])"#).unwrap()),
+        ("sql_injection", "high", "CWE-89", Regex::new(r"(?i)(format.*SELECT|%s.*SELECT)").unwrap()),
+        ("insecure_http", "medium", "CWE-319", Regex::new(r"http://[a-zA-Z]").unwrap()),
         ("debug_enabled", "medium", "CWE-489", Regex::new(r"(?i)(debug\s*=\s*true|DEBUG\s*=\s*True)").unwrap()),
         ("weak_crypto", "medium", "CWE-327", Regex::new(r"(?i)(md5|sha1)\(").unwrap()),
     ]
