@@ -1,5 +1,6 @@
 //! Impact analysis — file relevance ranking.
 
+pub mod ast;
 pub mod git;
 pub mod keywords;
 pub mod scorer;

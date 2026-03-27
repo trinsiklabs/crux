@@ -1,7 +1,9 @@
 //! Safety pipeline — 7-gate enforcement.
 
-pub mod preflight;
+pub mod audit;
 pub mod pipeline;
+pub mod preflight;
+pub mod tdd;
 
 use serde::Serialize;
 

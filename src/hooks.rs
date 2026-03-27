@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 
 use crate::session;
 
-static CORRECTION_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+pub static CORRECTION_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
         r"(?i)\bno,?\s+(actually|not|that's wrong|incorrect)",
         r"(?i)\binstead,?\s+(use|do|try|make)",

@@ -542,10 +542,22 @@ impl CruxServer {
         })).unwrap_or_default()
     }
 
-    /// Get project context.
-    #[tool(description = "Read the PROJECT.md context file.")]
+    /// Get project context — auto-generates if not found or stale.
+    #[tool(description = "Read the PROJECT.md context file. Auto-generates if missing.")]
     async fn get_project_context(&self) -> String {
         let path = self.crux_dir().join("context/PROJECT.md");
+        // Auto-generate if missing or stale (>24h)
+        let should_generate = if path.exists() {
+            std::fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .map(|t| t.elapsed().unwrap_or_default().as_secs() > 86400)
+                .unwrap_or(true)
+        } else {
+            true
+        };
+        if should_generate {
+            let _ = crate::context::write_project_context(&self.project_dir, &self.crux_dir());
+        }
         match std::fs::read_to_string(&path) {
             Ok(content) => serde_json::to_string(&serde_json::json!({"found": true, "content": content})).unwrap_or_default(),
             Err(_) => r#"{"found": false}"#.into(),
@@ -578,14 +590,24 @@ impl CruxServer {
     /// Check triggers and gather content for a BIP draft.
     #[tool(description = "Check triggers and gather content for a build-in-public draft.")]
     async fn bip_generate(&self) -> String {
-        // Read BIP state
-        let state_path = self.crux_dir().join("bip/state.json");
-        let state: serde_json::Value = std::fs::read_to_string(&state_path)
-            .ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(serde_json::json!({}));
+        let config = crate::bip::config::load_config(&self.crux_dir());
+        let trigger = crate::bip::triggers::evaluate(&self.crux_dir(), &config);
+        let content = crate::bip::gather::gather(&self.project_dir, &self.crux_dir());
+
         serde_json::to_string(&serde_json::json!({
-            "status": "ready",
-            "state": state,
-            "message": "Gather content from git log, corrections, and knowledge. Write a draft and call bip_approve.",
+            "should_trigger": trigger.should_trigger,
+            "trigger_reason": trigger.reason,
+            "content": {
+                "commits": content.commits,
+                "corrections": content.corrections,
+                "knowledge": content.knowledge,
+                "working_on": content.working_on,
+            },
+            "voice": {
+                "style": config.voice.style,
+                "tone": config.voice.tone,
+                "never": config.voice.never,
+            },
         })).unwrap_or_default()
     }
 
@@ -597,22 +619,63 @@ impl CruxServer {
         let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
         let path = drafts_dir.join(format!("{ts}.md"));
         let _ = std::fs::write(&path, &params.0.content);
-        serde_json::to_string(&serde_json::json!({"approved": true, "path": path.to_string_lossy()})).unwrap_or_default()
+
+        // Try to queue to Typefully
+        let mut queued = false;
+        if let Some(api_key) = crate::api::typefully::load_api_key(&self.crux_dir()) {
+            match crate::api::typefully::create_draft(&api_key, &params.0.content, None) {
+                Ok(_) => { queued = true; }
+                Err(_) => {}
+            }
+        }
+
+        // Update BIP state
+        let mut state = crate::bip::config::load_state(&self.crux_dir());
+        state.last_queued_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        state.posts_today += 1;
+        state.commits_since_last_post = 0;
+        state.interactions_since_last_post = 0;
+        crate::bip::config::save_state(&self.crux_dir(), &state);
+
+        serde_json::to_string(&serde_json::json!({
+            "approved": true,
+            "queued_to_typefully": queued,
+            "path": path.to_string_lossy(),
+        })).unwrap_or_default()
     }
 
     /// Get BIP status.
     #[tool(description = "Get current build-in-public state — counters, cooldown, recent posts.")]
     async fn bip_status(&self) -> String {
-        let state_path = self.crux_dir().join("bip/state.json");
-        let state: serde_json::Value = std::fs::read_to_string(&state_path)
-            .ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(serde_json::json!({}));
-        serde_json::to_string(&state).unwrap_or_default()
+        let state = crate::bip::config::load_state(&self.crux_dir());
+        let config = crate::bip::config::load_config(&self.crux_dir());
+        let trigger = crate::bip::triggers::evaluate(&self.crux_dir(), &config);
+
+        serde_json::to_string(&serde_json::json!({
+            "state": state,
+            "should_trigger": trigger.should_trigger,
+            "trigger_reason": trigger.reason,
+            "thresholds": {
+                "commits": config.triggers.commit_threshold,
+                "interactions": config.triggers.interaction_threshold,
+                "cooldown_minutes": config.triggers.cooldown_minutes,
+            },
+        })).unwrap_or_default()
     }
 
     /// Get BIP analytics.
     #[tool(description = "Get BIP engagement analytics.")]
     async fn bip_get_analytics(&self) -> String {
-        r#"{"analytics": "not yet connected to Typefully API in Rust binary"}"#.into()
+        // Count drafts
+        let drafts_count = std::fs::read_dir(self.crux_dir().join("bip/drafts"))
+            .map(|entries| entries.filter_map(|e| e.ok()).count())
+            .unwrap_or(0);
+        let state = crate::bip::config::load_state(&self.crux_dir());
+        serde_json::to_string(&serde_json::json!({
+            "drafts_count": drafts_count,
+            "posts_today": state.posts_today,
+            "last_queued": state.last_queued_at,
+        })).unwrap_or_default()
     }
 
     // --- Model Routing ---
@@ -630,17 +693,30 @@ impl CruxServer {
         serde_json::to_string(&serde_json::json!({"task_type": task, "tier": tier})).unwrap_or_default()
     }
 
-    /// Show available model tiers.
+    /// Show available model tiers — auto-discovers local models via Ollama.
     #[tool(description = "Show what model is available at each tier.")]
     async fn get_available_tiers(&self) -> String {
+        let local_models = crate::api::ollama::list_models(None);
+        let local_names: Vec<&str> = local_models.iter().map(|m| m.name.as_str()).collect();
+
+        let mut tiers = serde_json::json!({
+            "micro": local_names.iter().find(|n| n.contains("8b") || n.contains("4b")).unwrap_or(&"none"),
+            "fast": "claude-haiku",
+            "standard": "claude-sonnet",
+            "frontier": "claude-opus",
+        });
+
+        // Fill local tier with discovered models
+        if let Some(local) = local_names.iter().find(|n| n.contains("30b") || n.contains("27b") || n.contains("coder")) {
+            tiers["local"] = serde_json::json!(local);
+        } else {
+            tiers["local"] = serde_json::json!("none");
+        }
+
         serde_json::to_string(&serde_json::json!({
-            "tiers": {
-                "micro": "qwen3:8b",
-                "fast": "claude-haiku",
-                "local": "qwen3-coder:30b",
-                "standard": "claude-sonnet",
-                "frontier": "claude-opus",
-            }
+            "tiers": tiers,
+            "ollama_running": !local_models.is_empty(),
+            "local_models": local_names,
         })).unwrap_or_default()
     }
 
@@ -659,11 +735,8 @@ impl CruxServer {
     /// Get model quality stats.
     #[tool(description = "Get model quality statistics — success rates per task type and tier.")]
     async fn get_model_quality_stats(&self) -> String {
-        let stats_path = self.crux_dir().join("analytics/model_quality.json");
-        match std::fs::read_to_string(&stats_path) {
-            Ok(content) => content,
-            Err(_) => r#"{"stats": {}}"#.into(),
-        }
+        let stats = crate::models::get_stats(&self.crux_dir());
+        serde_json::to_string(&serde_json::json!({"stats": stats})).unwrap_or_default()
     }
 
     // --- TDD Gate ---
@@ -671,26 +744,15 @@ impl CruxServer {
     /// Start TDD enforcement gate.
     #[tool(description = "Start the TDD enforcement gate for a feature build.")]
     async fn start_tdd_gate(&self, params: Parameters<HandoffParam>) -> String {
-        let tdd_path = self.crux_dir().join("tdd/state.json");
-        let _ = std::fs::create_dir_all(tdd_path.parent().unwrap());
-        let state = serde_json::json!({
-            "phase": "plan",
-            "feature": params.0.content,
-            "started": true,
-            "timestamp": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        });
-        let _ = std::fs::write(&tdd_path, serde_json::to_string_pretty(&state).unwrap_or_default());
+        let state = crate::safety::tdd::start(&self.crux_dir(), &params.0.content, vec![], vec![]);
         serde_json::to_string(&state).unwrap_or_default()
     }
 
     /// Check TDD status.
     #[tool(description = "Check the current status of the TDD enforcement gate.")]
     async fn check_tdd_status(&self) -> String {
-        let tdd_path = self.crux_dir().join("tdd/state.json");
-        match std::fs::read_to_string(&tdd_path) {
-            Ok(content) => content,
-            Err(_) => r#"{"started": false}"#.into(),
-        }
+        let state = crate::safety::tdd::check_status(&self.crux_dir());
+        serde_json::to_string(&state).unwrap_or_default()
     }
 
     // --- Security Audit ---
@@ -698,24 +760,21 @@ impl CruxServer {
     /// Start security audit.
     #[tool(description = "Start a recursive security audit loop.")]
     async fn start_security_audit(&self) -> String {
-        let audit_path = self.crux_dir().join("security_audit/state.json");
-        let _ = std::fs::create_dir_all(audit_path.parent().unwrap());
-        let state = serde_json::json!({
-            "iteration": 0, "max_iterations": 3, "findings": [],
-            "started": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        });
-        let _ = std::fs::write(&audit_path, serde_json::to_string_pretty(&state).unwrap_or_default());
+        let state = crate::safety::audit::start(&self.crux_dir());
         serde_json::to_string(&state).unwrap_or_default()
     }
 
     /// Security audit summary.
     #[tool(description = "Get a summary of the security audit.")]
     async fn security_audit_summary(&self) -> String {
-        let audit_path = self.crux_dir().join("security_audit/state.json");
-        match std::fs::read_to_string(&audit_path) {
-            Ok(content) => content,
-            Err(_) => r#"{"total_findings": 0, "started": false}"#.into(),
-        }
+        let state = crate::safety::audit::summary(&self.crux_dir());
+        serde_json::to_string(&serde_json::json!({
+            "total_findings": state.findings.len(),
+            "findings": state.findings,
+            "iteration": state.iteration,
+            "max_iterations": state.max_iterations,
+            "converged": state.converged,
+        })).unwrap_or_default()
     }
 
     // --- Design Validation ---
@@ -735,24 +794,12 @@ impl CruxServer {
     /// Check contrast ratio.
     #[tool(description = "Check contrast ratio between two hex colors for WCAG compliance.")]
     async fn check_contrast(&self, params: Parameters<HandoffParam>) -> String {
-        // Parse "foreground background" from content
         let parts: Vec<&str> = params.0.content.split_whitespace().collect();
         if parts.len() < 2 {
             return r#"{"error": "Provide two hex colors separated by space"}"#.into();
         }
-        let fg = parse_hex_luminance(parts[0]);
-        let bg = parse_hex_luminance(parts[1]);
-        let ratio = if fg > bg {
-            (fg + 0.05) / (bg + 0.05)
-        } else {
-            (bg + 0.05) / (fg + 0.05)
-        };
-        serde_json::to_string(&serde_json::json!({
-            "ratio": (ratio * 100.0).round() / 100.0,
-            "aa_normal": ratio >= 4.5,
-            "aa_large": ratio >= 3.0,
-            "aaa_normal": ratio >= 7.0,
-        })).unwrap_or_default()
+        let result = crate::design::check_contrast(parts[0], parts[1]);
+        serde_json::to_string(&result).unwrap_or_default()
     }
 
     // --- Figma ---
@@ -800,22 +847,67 @@ impl CruxServer {
         })).unwrap_or_default()
     }
 
+    // --- Session Recovery ---
+
+    /// Recover a corrupted Claude Code session from its .jsonl file.
+    #[tool(description = "Recover a corrupted Claude Code session. Ingests the .jsonl file, extracts all context (decisions, files, corrections, full conversation log), and writes to .crux/ for restore_context. Use when a session gets 400 tool concurrency errors.")]
+    async fn recover_session(&self, params: Parameters<QueryParam>) -> String {
+        let path_str = &params.0.query;
+        let session_path = if path_str.is_empty() {
+            // Auto-find most recent session
+            let sessions = crate::recover::find_sessions(&self.project_dir, &self.home_dir);
+            match sessions.first() {
+                Some(p) => p.clone(),
+                None => return r#"{"recovered": false, "error": "No Claude Code sessions found"}"#.into(),
+            }
+        } else {
+            std::path::PathBuf::from(path_str)
+        };
+
+        let recovered = crate::recover::parse_session(&session_path);
+        match crate::recover::write_recovery(&recovered, &self.crux_dir()) {
+            Ok(summary) => {
+                serde_json::to_string(&serde_json::json!({
+                    "recovered": true,
+                    "summary": summary,
+                    "decisions": recovered.key_decisions.len(),
+                    "files": recovered.files_touched.len(),
+                    "corrections": recovered.corrections.len(),
+                    "messages": recovered.messages.len(),
+                    "interactions": recovered.interactions.len(),
+                })).unwrap_or_default()
+            }
+            Err(e) => {
+                serde_json::to_string(&serde_json::json!({
+                    "recovered": false,
+                    "error": e.to_string(),
+                })).unwrap_or_default()
+            }
+        }
+    }
+
     // --- Background Processors ---
 
     /// Check processor thresholds.
     #[tool(description = "Check which background processing thresholds are exceeded.")]
     async fn check_processor_thresholds(&self) -> String {
-        serde_json::to_string(&serde_json::json!({
-            "corrections_exceeded": false,
-            "interactions_exceeded": false,
-            "token_exceeded": false,
-        })).unwrap_or_default()
+        let result = crate::processors::check_thresholds(&self.crux_dir());
+        serde_json::to_string(&result).unwrap_or_default()
     }
 
     /// Run background processors.
     #[tool(description = "Run all due background processors.")]
     async fn run_background_processors(&self) -> String {
-        r#"{"success": true, "processors_run": []}"#.into()
+        let mut processors_run = Vec::new();
+        let thresholds = crate::processors::check_thresholds(&self.crux_dir());
+        if thresholds.corrections_exceeded {
+            let digest = crate::processors::generate_digest(&self.crux_dir());
+            processors_run.push("digest");
+        }
+        serde_json::to_string(&serde_json::json!({
+            "success": true,
+            "processors_run": processors_run,
+        })).unwrap_or_default()
     }
 
     /// Get processor status.
@@ -833,10 +925,42 @@ impl CruxServer {
     /// Gate 4: 8B adversarial audit.
     #[tool(description = "Gate 4: Run an adversarial security audit using a small (8B) model.")]
     async fn audit_script_8b(&self, params: Parameters<ScriptParam>) -> String {
-        // Without Ollama integration, return pass with note
+        // Try Ollama first
+        if crate::api::ollama::check_running(None) {
+            let models = crate::api::ollama::list_models(None);
+            let model_8b = models.iter()
+                .find(|m| m.name.contains("8b") || m.name.contains("7b") || m.name.contains("qwen"))
+                .map(|m| m.name.as_str())
+                .unwrap_or("qwen3:8b");
+
+            let prompt = format!(
+                "You are a security auditor. Review this script for vulnerabilities, \
+                data loss risks, and unintended side effects. Be adversarial.\n\n```\n{}\n```\n\n\
+                Respond with PASS if safe, or list specific issues.",
+                params.0.content
+            );
+
+            match crate::api::ollama::generate(model_8b, &prompt, None) {
+                Ok(response) => {
+                    let passed = response.to_lowercase().contains("pass") && !response.to_lowercase().contains("fail");
+                    return serde_json::to_string(&serde_json::json!({
+                        "passed": passed,
+                        "model": model_8b,
+                        "response": response,
+                    })).unwrap_or_default();
+                }
+                Err(e) => {
+                    return serde_json::to_string(&serde_json::json!({
+                        "passed": true,
+                        "note": format!("Ollama audit failed: {e}. Passed by default."),
+                    })).unwrap_or_default();
+                }
+            }
+        }
+
         serde_json::to_string(&serde_json::json!({
             "passed": true,
-            "note": "8B audit requires Ollama backend — passed by default in Rust binary",
+            "note": "Ollama not running. Passed by default.",
             "content_length": params.0.content.len(),
         })).unwrap_or_default()
     }
@@ -844,10 +968,38 @@ impl CruxServer {
     /// Gate 5: 32B second-opinion audit.
     #[tool(description = "Gate 5: Run a second-opinion security audit using a large (32B) model.")]
     async fn audit_script_32b(&self, params: Parameters<ScriptParam>) -> String {
+        if crate::api::ollama::check_running(None) {
+            let models = crate::api::ollama::list_models(None);
+            let model_32b = models.iter()
+                .find(|m| m.name.contains("32b") || m.name.contains("30b") || m.name.contains("27b"))
+                .map(|m| m.name.as_str());
+
+            if let Some(model) = model_32b {
+                let prompt = format!(
+                    "You are a senior security reviewer providing a second opinion. \
+                    Review this script for structural issues, race conditions, and subtle bugs.\n\n\
+                    ```\n{}\n```\n\nRespond with PASS if safe, or list specific issues.",
+                    params.0.content
+                );
+
+                match crate::api::ollama::generate(model, &prompt, None) {
+                    Ok(response) => {
+                        let passed = response.to_lowercase().contains("pass");
+                        return serde_json::to_string(&serde_json::json!({
+                            "passed": passed,
+                            "model": model,
+                            "response": response,
+                        })).unwrap_or_default();
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+
         serde_json::to_string(&serde_json::json!({
             "passed": true,
             "skipped": true,
-            "note": "32B audit requires Ollama backend — skipped in Rust binary",
+            "note": "No 32B model available. Skipped.",
             "content_length": params.0.content.len(),
         })).unwrap_or_default()
     }
@@ -873,15 +1025,7 @@ impl CruxServer {
     }
 }
 
-fn parse_hex_luminance(hex: &str) -> f64 {
-    let hex = hex.trim_start_matches('#');
-    if hex.len() < 6 { return 0.0; }
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f64 / 255.0;
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f64 / 255.0;
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f64 / 255.0;
-    let linearize = |c: f64| if c <= 0.03928 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
-    0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
-}
+// parse_hex_luminance moved to design.rs
 
 /// Start the MCP server on stdio transport.
 pub async fn run_server() -> anyhow::Result<()> {

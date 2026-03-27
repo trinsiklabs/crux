@@ -139,7 +139,7 @@ impl Drop for McpClient {
 fn all_56_tools_registered() {
     let mut client = McpClient::new();
     let tools = client.list_tools();
-    assert_eq!(tools.len(), 56, "Expected 56 tools, got {}", tools.len());
+    assert_eq!(tools.len(), 57, "Expected 57 tools, got {}", tools.len());
 }
 
 #[test]
